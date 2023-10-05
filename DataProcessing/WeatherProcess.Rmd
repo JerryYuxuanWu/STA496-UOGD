@@ -1,0 +1,39 @@
+---
+title: "FlaringProcess"
+author: "William Zhang"
+date: "2023-09-28"
+output: html_document
+---
+```{r setup, include=FALSE}
+library(tidyverse)
+library(lubridate)
+```
+## Reading in data
+```{r}
+weather <- read.csv("../data/Weather/StationData230414-0928.csv")
+```
+## Cleaning
+```{r}
+# credit to Jerry Wu for some of the code here
+weather <- weather[-1, ] %>% select(-Station.5ZR.Carlsbad..)
+
+# Convert date column to date type
+weather$`Date Time` <- mdy_hm(weather$Date.Time, tz = 'MST')
+weather$`year` <- format(weather$`Date Time`, '%Y')
+
+# Convert the rest to numeric
+weather[2:14] <- sapply(weather[2:14],as.numeric)
+sapply(weather, class)
+
+# Rename the columns to match what openair uses
+weather <- weather %>%
+  rename('date' = `Date Time`, 'ws' = `Wind.Speed.S`, 'wd' = `Wind.Dir.S`,
+         'nox' = `NOXppb`, 'no2' = `NO2ppb`, 'o3' = `O3`, 'no' = `NOppb`)
+```
+
+```{r}
+# Saving
+# Note that the variables are mostly covered in the trailer dataset, might need adjustments later
+saveRDS(weather, "WeatherProcessed.rds")
+```
+
