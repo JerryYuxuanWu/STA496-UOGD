@@ -50,7 +50,7 @@ for (dataframe in data_list2){
   
   # Convert to standard time format
   df_temporary <- get(paste0("df_", dataframe))
-  df_temporary$std_time <- as_datetime(df_temporary$time)
+  df_temporary$std_time <- as_datetime(df_temporary$time, tz = "MST")
   
   df_temporary$time_hourly <- substr(format(df_temporary$std_time, format = "%Y-%m-%d %H:%M:%S"), 1, 13)
   exclude_vars <- c("std_time", "time")
