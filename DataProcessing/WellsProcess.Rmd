@@ -13,6 +13,45 @@ wells_prod <- readRDS("../data/wells/cb_wells_prod.rds")
 ## Cleaning and Processing
 Want to obtain monthly oil and gas production of all wells/prod within 10km of lovings site
 ```{r}
+# filter distance
+# lon, lat of Loving monitor:  (-104.1089, 32.2961)
+loving_lonlat <- c(-104.1089, 32.2961)
+distance_km_lov <- function(long, lati){
+  start <- c(long, lati)
+  distGeo(start, loving_lonlat) / 1000
+}
 
+# 32.297345,-104.109386
+loving_lonlat2 <- c(-104.1089, 32.2961)
+distance_km_lov <- function(long, lati){
+  start <- c(long, lati)
+  distGeo(start, loving_lonlat) / 1000
+}
+
+wells_prod <- wells_prod %>% select(-c("drill_type", "spud_date", "completion_date", "first_prod_date", "last_prod_date", "Operator.Company.Name"))%>% 
+  mutate(distToLovi = mapply(distance_km_lov, uog_lon, uog_lat))
+```
+```{r}
+# filter distance
+wells_prod <- wells_prod %>% filter(distToLovi <= 10) %>% select(-c("uog_lon", "uog_lat", "well_status_p", "well_status", "prod_type_p", "production_type"))
+```
+
+
+### 20230301 to current - for Loving site
+```{r}
+wells_prod_0301 <- wells_prod %>% filter(prod_date >= "2023-01-01")
+# replace NA with 0
+wells_prod_0301$monthly_oil[is.na(wells_prod_0301$monthly_oil)] <- 0
+wells_prod_0301$monthly_gas[is.na(wells_prod_0301$monthly_gas)] <- 0
+```
+```{r}
+# Group by date and dist
+wells_prod_0301 <- wells_prod_0301 %>% group_by(prod_date, distToLovi) %>% 
+  summarize(monthly_oil = sum(monthly_oil),
+            monthly_gas = sum(monthly_gas))
+```
+```{r}
+# save to RDS
+saveRDS(wells_prod_0301, "WellsProcessed0301.rds")
 ```
 
