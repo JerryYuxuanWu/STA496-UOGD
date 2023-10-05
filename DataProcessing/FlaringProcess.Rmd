@@ -1,0 +1,47 @@
+---
+title: "FlaringProcess"
+author: "William Zhang"
+date: "2023-09-28"
+output: html_document
+---
+## Reading in RDS
+```{r}
+flaring <- readRDS("../data/pb_vnf/pb-vnf_230301-0927.rds")
+```
+
+## Filtering and Processing
+```{r}
+# excluding all cooler than 1600 bb
+flaring <- flaring %>% filter(temp_bb >= 1600)
+```
+
+Distance function, How far each flares are
+```{r}
+# lon, lat of Loving monitor:  (-104.1089, 32.2961)
+loving_lonlat <- c(-104.1089, 32.2961)
+distance_km_lov <- function(long, lati){
+  start <- c(long, lati)
+  distGeo(start, loving_lonlat) / 1000
+}
+
+# 32.297345,-104.109386
+loving_lonlat2 <- c(-104.1089, 32.2961)
+distance_km_lov <- function(long, lati){
+  start <- c(long, lati)
+  distGeo(start, loving_lonlat) / 1000
+}
+
+flaring <- flaring %>% 
+  mutate(distToLovi = mapply(distance_km_lov, lon, lat)) %>% 
+  select(c("datetime", "distToLovi", "temp_bb", "rhi", "esf_bb", "area_bb", "lon", "lat")) 
+```
+
+### Saving
+```{r}
+saveRDS(flaring, "FlaringProcessed.rds")
+```
+
+
+
+
+

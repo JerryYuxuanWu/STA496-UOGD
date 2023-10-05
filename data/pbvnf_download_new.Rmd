@@ -1,0 +1,98 @@
+---
+title: "pbvnf-download-new"
+author: "William Zhang"
+date: "2023-06-23"
+output: html_document
+---
+```{r}
+library(httr)
+library(jsonlite)
+library(utils)
+library(tidyverse)
+library(R.utils)
+library(data.table)
+
+# Retrieve access token
+params <- list(
+client_id = 'eogdata_oidc',
+client_secret = '2677ad81-521b-4869-8480-6d05b9e57d48',
+username = 'williamqd.zhang@mail.utoronto.ca',
+password = 'MvvErN2M!WyYY@F',
+grant_type = 'password'
+)
+token_url <- 'https://eogauth.mines.edu/auth/realms/master/protocol/openid-connect/token'
+response <- POST(token_url, body = params, encode = "form")
+access_token_list <- fromJSON(content(response,as="text",encoding="UTF-8"))
+access_token <- access_token_list$access_token
+auth <- paste('Bearer', access_token)
+```
+
+
+```{r}
+# Initialize empty data frame to store vnf entries
+vnf_pb_new <- data.frame(datetime = POSIXct(),
+                          lon = numeric(),
+                          lat = numeric(),
+                          temp_bb = integer(),
+                          temp_bkg = integer(),
+                          esf_bb = numeric(),
+                          rhi = numeric(),
+                          rh = numeric(),
+                          area_pixel = numeric(),
+                          area_bb = numeric(),
+                          cloud_mask = integer(),
+                          stringsAsFactors = FALSE)
+```
+
+```{r}
+start_date <- as.Date('2023-03-01')
+end_date <- as.Date('2023-09-27')
+date_sequence <- seq(start_date, end_date, by = "day")
+
+vnf.cols = c('date_mscan', 'lon_gmtco', 'lat_gmtco', 'temp_bb', 'temp_bkg',
+               'esf_bb', 'rhi', 'rh', 'area_pixel', 'area_bb', 'cloud_mask')
+# arbitary boundary of pb taken from Jerry, could modify
+lon_lim <- c(-104.8058, -100.6712)
+lat_lim <- c(30.63064, 33.6984)
+```
+
+# Downloading data loop
+```{r}
+for (date in date_sequence){
+  date_string <- format(as.Date(date), "%Y%m%d")
+  year_month <- paste(substr(date_string, 1, 4), substr(date_string, 5, 6), sep="/")
+ 
+  vnfv30.url.pfx <- c('https://eogdata.mines.edu/wwwdata/viirs_products/vnf/v30/rearrange/','/npp/VNF_npp_d',
+    '_noaa_v30-ez.csv.gz')
+  
+  # create the url to request
+  data_url <- paste0(vnfv30.url.pfx[1], year_month, vnfv30.url.pfx[2], date_string, vnfv30.url.pfx[3], sep = "")
+  
+  gz.name = paste0('./pb_vnf/raw/', basename(data_url))
+  csv.name = gsub(".gz", "", gz.name)
+  
+  download.file(data_url,gz.name,mode = "wb", quiet = TRUE, headers = list(Authorization = auth))
+  gunzip(gz.name, overwrite = TRUE)
+  
+  vnf.temp <- read.csv(csv.name) %>% 
+      rename_all(tolower) %>% # rename all columns to lowercase for convenience
+      select(all_of(vnf.cols)) # collect relevant columns
+
+  vnf.temp <- vnf.temp %>% replace(vnf.temp == 999999, NA) %>% # replace 999999 as missing
+      filter(!is.na(temp_bb)) %>% # keep those not missing temperature
+      # collect and rename certain columns, and drop a few
+      mutate(date_mscan = as_datetime(substr(date_mscan, 1, 19))) %>% 
+      select(datetime = date_mscan, lon = lon_gmtco, lat = lat_gmtco,
+             everything()) %>% 
+      # filter by lat & lon bounds (bbox)
+      filter(lon >= lon_lim[1], lon <= lon_lim[2],
+             lat >= lat_lim[1], lat <= lat_lim[2])
+  vnf_pb_new <- rbind(vnf_pb_new, vnf.temp)
+  
+  file.remove(csv.name)
+}
+```
+
+```{r}
+saveRDS(vnf_pb_new, "./pb_vnf/pb-vnf_230301-0927.rds")
+```

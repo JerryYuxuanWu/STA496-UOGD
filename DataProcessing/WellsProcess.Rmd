@@ -1,0 +1,18 @@
+---
+title: "FlaringProcess"
+author: "William Zhang"
+date: "2023-09-28"
+output: html_document
+---
+## Reading data
+```{r}
+wells_clean <- readRDS("../data/wells/cleaned_wells_cb.rds")
+wells_prod <- readRDS("../data/wells/cb_wells_prod.rds")
+```
+
+## Cleaning and Processing
+Want to obtain monthly oil and gas production of all wells/prod within 10km of lovings site
+```{r}
+
+```
+
