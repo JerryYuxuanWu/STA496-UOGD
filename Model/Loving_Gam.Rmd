@@ -1,0 +1,77 @@
+---
+title: "Loving Site Modeling-Gam"
+author: "William Zhang"
+date: "2023-10-08"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning=FALSE)
+```
+```{r, include=FALSE}
+library(tidyverse)
+library(lmtest)
+library(vip)
+library(car)
+library(mgcv)
+```
+
+## Reading the data
+```{r}
+loving_daily <- readRDS("../DataProcessing/Trailer_daily_merge.rds")
+loving_hourly <- readRDS("../DataProcessing/Trailer_hourly_merge.rds")
+```
+```{r}
+loving_daily$count[is.na(loving_daily$count)] <- 0
+loving_hourly$count[is.na(loving_hourly$count)] <- 0
+```
+
+## Modeling
+```{r}
+# First we do it for daily
+
+# Define the response variable
+response_var <- "radon_pCi_mean"
+
+# Define the names of the columns to exclude
+exclude_cols <- c("radon_pCi_mean", "rd_particle_B_mean", "rd_particle_pCi_mean", "radon_B_mean",
+                  "t_pump_f_mean", "temp_bb", "rhi", "esf_bb", "distToLovi", 
+                  "datetime", "monthly_oil", "monthly_gas", "distToLovi_wells")
+
+# Generate the formula for the GAM model
+formula_str_s <- paste(response_var, "~", paste(paste0("s(", setdiff(names(loving_daily), exclude_cols), ")"), collapse = "+"))
+formula_str <- paste(response_var, "~", paste(setdiff(names(loving_daily), exclude_cols), collapse = "+"))
+
+
+# Fit the GAM model 
+daily_v1 <- gam(as.formula(formula_str), data = loving_daily)
+
+# View the summary of the GAM model
+summary(daily_v1)
+```
+
+```{r}
+
+# For hourly
+
+# Define the response variable
+response_var <- "radon_pCi"
+
+# Define the names of the columns to exclude
+exclude_cols <- c("radon_pCi", "rd_particle_B", "rd_particle_pCi", "radon_B",
+                  "t_pump_f", "temp_bb", "rhi", "esf_bb", "distToLovi", 
+                  "datetime", "monthly_oil", "monthly_gas", "distToLovi_wells",
+                  "time_hourly")
+
+# Generate the formula for the GAM model
+formula_str_s <- paste(response_var, "~", paste(paste0("s(", setdiff(names(loving_hourly), exclude_cols), ")"), collapse = "+"))
+formula_str <- paste(response_var, "~", paste(setdiff(names(loving_hourly), exclude_cols), collapse = "+"))
+
+
+# Fit the GAM model 
+hourly_v1 <- gam(as.formula(formula_str), data = loving_hourly)
+
+# View the summary of the GAM model
+summary(hourly_v1)
+```
+

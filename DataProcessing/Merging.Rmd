@@ -1,0 +1,104 @@
+---
+title: "Merging"
+author: "William Zhang"
+date: "2023-10-08"
+output: html_document
+---
+```{r}
+library(tidyverse)
+```
+
+```{r}
+# Read all the related RDS first
+flaring <- readRDS('FlaringProcessed-v2.rds')
+Trailer <- readRDS('TrailerProcessed.rds')
+Weather <- readRDS('WeatherProcessed.rds')
+Wells <- readRDS('WellsProcessed0301.rds')
+```
+
+## A few processing
+```{r}
+# Remove Trailer entries where radon_pci or rd_particle_pci is NA
+Trailer <- Trailer[!is.na(Trailer$radon_pCi) & !is.na(Trailer$rd_particle_pCi), ]
+
+# add a daily date and a monthly date
+Trailer <- Trailer %>% mutate(datetime = substr(time_hourly, 1, 10))
+Trailer <- Trailer %>% mutate(datetime_monthly = substr(time_hourly, 1, 7))
+```
+```{r}
+# create a trailer_daily
+my_mean <- function(x){
+  mean(x, na.rm=TRUE)
+}
+Trailer_daily <- Trailer %>% group_by(datetime) %>% 
+  summarize_at(vars(-c(time_hourly, hour, datetime_monthly)), list(mean = my_mean))
+
+# add a month variable for that
+Trailer_daily <- Trailer_daily %>% mutate(datetime_monthly = substr(datetime, 1, 7))
+```
+```{r}
+# summarize a daily count flaring
+flaring_daily <- flaring %>% filter(distToLovi <= 20) %>% group_by(substr(datetime, 1, 10)) %>% 
+  summarize(temp_bb = mean(temp_bb),
+            distToLovi = mean(distToLovi),
+            rhi = mean(rhi),
+            esf_bb = mean(esf_bb),
+            count = n()) %>% 
+  rename(datetime = `substr(datetime, 1, 10)`)
+```
+```{r}
+# summarize a monthly count production
+wells_monthly <- Wells %>% group_by(substr(prod_date, 1, 7)) %>% 
+  summarize(distToLovi_wells = mean(distToLovi),
+            monthly_oil = sum(monthly_oil),
+            monthly_gas = sum(monthly_gas)) %>% 
+  rename(Month = `substr(prod_date, 1, 7)`)
+```
+
+
+## Merging
+```{r}
+Trailer_hourly_merge <- merge(x = Trailer, 
+                              y = flaring_daily,
+                              by.x = 'datetime',
+                              by.y = 'datetime',
+                              all.x = TRUE,
+                              all.y = TRUE)
+Trailer_hourly_merge <- merge(x = Trailer_hourly_merge,
+                              y = wells_monthly,
+                              by.x = 'datetime_monthly',
+                              by.y = 'Month',
+                              all.x = TRUE,
+                              all.y = TRUE)
+```
+```{r}
+Trailer_daily_merge <- merge(x = Trailer_daily, 
+                              y = flaring_daily,
+                              by.x = 'datetime',
+                              by.y = 'datetime',
+                              all.x = TRUE,
+                              all.y = TRUE)
+Trailer_daily_merge <- merge(x = Trailer_daily_merge,
+                              y = wells_monthly,
+                              by.x = 'datetime_monthly',
+                              by.y = 'Month',
+                              all.x = TRUE,
+                              all.y = TRUE)
+```
+
+```{r}
+# some additional cleaning after merging
+Trailer_hourly_merge <- Trailer_hourly_merge %>% select(-c(datetime_monthly)) %>% 
+  filter(!is.na(radon_pCi)) %>% filter(!is.na(rd_particle_pCi))
+
+Trailer_daily_merge <- Trailer_daily_merge %>% select(-c(datetime_monthly)) %>% 
+  filter(!is.na(radon_pCi_mean)) %>% filter(!is.na(rd_particle_pCi_mean))
+```
+
+## Saving
+```{r}
+saveRDS(Trailer_hourly_merge, "Trailer_hourly_merge.rds")
+saveRDS(Trailer_daily_merge, "Trailer_daily_merge.rds")
+```
+
+

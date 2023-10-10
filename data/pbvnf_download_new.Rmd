@@ -9,6 +9,7 @@ library(httr)
 library(jsonlite)
 library(utils)
 library(tidyverse)
+library(lubridate)
 library(R.utils)
 library(data.table)
 
@@ -59,7 +60,7 @@ lat_lim <- c(30.63064, 33.6984)
 # Downloading data loop
 ```{r}
 for (date in date_sequence){
-  date_string <- format(as.Date(date), "%Y%m%d")
+  date_string <- format(as.Date(date, origin='1970-01-01'), "%Y%m%d")
   year_month <- paste(substr(date_string, 1, 4), substr(date_string, 5, 6), sep="/")
  
   vnfv30.url.pfx <- c('https://eogdata.mines.edu/wwwdata/viirs_products/vnf/v30/rearrange/','/npp/VNF_npp_d',
@@ -81,7 +82,7 @@ for (date in date_sequence){
   vnf.temp <- vnf.temp %>% replace(vnf.temp == 999999, NA) %>% # replace 999999 as missing
       filter(!is.na(temp_bb)) %>% # keep those not missing temperature
       # collect and rename certain columns, and drop a few
-      mutate(date_mscan = as_datetime(substr(date_mscan, 1, 19))) %>% 
+      mutate(date_mscan = as_datetime(substr(date_mscan, 1, 19), tz = "MST")) %>% 
       select(datetime = date_mscan, lon = lon_gmtco, lat = lat_gmtco,
              everything()) %>% 
       # filter by lat & lon bounds (bbox)
@@ -94,5 +95,5 @@ for (date in date_sequence){
 ```
 
 ```{r}
-saveRDS(vnf_pb_new, "./pb_vnf/pb-vnf_230301-0927.rds")
+saveRDS(vnf_pb_new, "./pb_vnf/pb-vnf_230301-0927-v2.rds")
 ```
