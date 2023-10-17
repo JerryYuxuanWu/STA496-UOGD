@@ -37,15 +37,25 @@ Trailer_daily <- Trailer %>% group_by(datetime) %>%
 Trailer_daily <- Trailer_daily %>% mutate(datetime_monthly = substr(datetime, 1, 7))
 ```
 ```{r}
+# add an inverse distance for flaring
+flaring$inv_dist <- ifelse(1 / flaring$distToLovi < 0.01, 0, 1 / flaring$distToLovi)
+```
+```{r}
 # summarize a daily count flaring
-flaring_daily <- flaring %>% filter(distToLovi <= 20) %>% group_by(substr(datetime, 1, 10)) %>% 
+flaring_daily <- flaring %>% 
+  # commenting next line after adding inverse distance
+  # filter(distToLovi <= 20) %>% 
+  group_by(substr(datetime, 1, 10)) %>% 
   summarize(temp_bb = mean(temp_bb),
             distToLovi = mean(distToLovi),
+            inv_dist = mean(inv_dist),
             rhi = mean(rhi),
             esf_bb = mean(esf_bb),
             count = n()) %>% 
   rename(datetime = `substr(datetime, 1, 10)`)
 ```
+
+
 ```{r}
 # summarize a monthly count production
 wells_monthly <- Wells %>% group_by(substr(prod_date, 1, 7)) %>% 

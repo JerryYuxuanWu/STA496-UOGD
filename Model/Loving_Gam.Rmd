@@ -14,6 +14,7 @@ library(lmtest)
 library(vip)
 library(car)
 library(mgcv)
+library(corrplot)
 ```
 
 ## Reading the data
@@ -26,6 +27,13 @@ loving_daily$count[is.na(loving_daily$count)] <- 0
 loving_hourly$count[is.na(loving_hourly$count)] <- 0
 ```
 
+```{r}
+# correlation matrix
+M = cor(loving_hourly %>% select(-c("temp_bb", "rhi", "esf_bb", "distToLovi", "inv_dist",
+                  "datetime", "monthly_oil", "monthly_gas", "distToLovi_wells",
+                  "time_hourly")) %>% na.omit())
+corrplot.mixed(M, order="AOE", number.cex = 0.5, font.cex = 0.5)
+```
 ## Modeling
 ```{r}
 # First we do it for daily
@@ -34,9 +42,9 @@ loving_hourly$count[is.na(loving_hourly$count)] <- 0
 response_var <- "radon_pCi_mean"
 
 # Define the names of the columns to exclude
-exclude_cols <- c("radon_pCi_mean", "rd_particle_B_mean", "rd_particle_pCi_mean", "radon_B_mean",
-                  "t_pump_f_mean", "temp_bb", "rhi", "esf_bb", "distToLovi", 
-                  "datetime", "monthly_oil", "monthly_gas", "distToLovi_wells")
+exclude_cols <- c("radon_pCi_mean", "rd_particle_B_mean", "rd_particle_pCi_mean", "radon_B_mean", 
+                  "temp_bb", "rhi", "esf_bb", "distToLovi", "monthly_oil", "monthly_gas", "distToLovi_wells",
+                  "datetime")
 
 # Generate the formula for the GAM model
 formula_str_s <- paste(response_var, "~", paste(paste0("s(", setdiff(names(loving_daily), exclude_cols), ")"), collapse = "+"))
@@ -74,4 +82,5 @@ hourly_v1 <- gam(as.formula(formula_str), data = loving_hourly)
 # View the summary of the GAM model
 summary(hourly_v1)
 ```
+
 

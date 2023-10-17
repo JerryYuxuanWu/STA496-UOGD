@@ -79,6 +79,11 @@ df_trailer <- merge(df_trailer, df_voc, by = 'time_hourly', all = TRUE)
 df_trailer$hour <- as.numeric(substr(df_trailer$time_hourly, 12, 13))
 ```
 ```{r}
+# remove room_f, pump_f, sw_comp_purge
+df_trailer <- df_trailer %>% select(-c(t_room_f, sw_comp_purge, t_pump_f))
+```
+
+```{r}
 summary(df_trailer)
 ```
 
