@@ -41,6 +41,9 @@ df_voc_q3 <- read.csv("../data/trailer0928/LNM_voc_2023_q3_v3.3.csv", skip=1, he
 ### Data processing
 ```{r}
 data_list2 <- c("rd", "co", "nox", "o3", "met", "ch4", "h2s", "voc")
+my_mean <- function(x){
+  mean(x, na.rm=TRUE)
+}
 
 for (dataframe in data_list2){
   df_q2 <- get(paste0("df_", dataframe, "_q2"))
@@ -56,7 +59,7 @@ for (dataframe in data_list2){
   exclude_vars <- c("std_time", "time")
   df_temporary_clean <- df_temporary %>% group_by(time_hourly) %>% summarize(across(
       .cols = -all_of(exclude_vars),  # Exclude specified variables
-      .fns = mean  # Apply the mean function
+      .fns = my_mean  # Apply the my_mean function with na.rm=TRUE
     ))
   assign(paste0("df_", dataframe), df_temporary_clean, envir = .GlobalEnv)
 }

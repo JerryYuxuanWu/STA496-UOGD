@@ -105,6 +105,12 @@ Trailer_daily_merge <- Trailer_daily_merge %>% select(-c(datetime_monthly)) %>%
   filter(!is.na(radon_pCi_mean)) %>% filter(!is.na(rd_particle_pCi_mean))
 ```
 
+```{r}
+# make datetime a Date variable
+Trailer_hourly_merge <- Trailer_hourly_merge %>% mutate(datetime = as.Date(datetime))
+Trailer_daily_merge <- Trailer_daily_merge %>% mutate(datetime = as.Date(datetime))
+```
+
 ## Saving
 ```{r}
 saveRDS(Trailer_hourly_merge, "Trailer_hourly_merge.rds")
