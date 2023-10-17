@@ -61,7 +61,7 @@ formula_str <- paste(response_var, "~", paste(setdiff(names(loving_daily), exclu
 
 
 # Fit the GAM model 
-daily_v1 <- mgcv::gam(as.formula(paste0(formula_str, "+s(as.numeric(datetime))")), data = loving_daily)
+daily_v1 <- mgcv::gam(as.formula(paste0(formula_str, "+s(as.numeric(datetime))")), data = loving_daily_noflares)
 
 # View the summary of the GAM model
 summary(daily_v1)
@@ -117,6 +117,13 @@ coef(daily_exhaust, 14)
 plot(daily_exhaust, scale = "bic")
 coef(daily_exhaust, 11)
 ```
+```{r}
+# Fitting a Gam on the BIC selected variables
+daily_v2 <- mgcv::gam(radon_pCi_mean ~ temp_f_mean + pressure_altcorr_mean + wsp_mean + co2_ppm_mean + ch4_mean + h2o_sync_mean + ethene_mean + acetylene_mean + cyclopentane_mean + i.pentane_mean + n.pentane_mean, data = loving_daily_noflares)
+
+# View the summary of the GAM model
+summary(daily_v2)
+```
 
 ```{r, eval=FALSE}
 # Fit the GAM model with ridge regression
@@ -138,7 +145,7 @@ response_var <- "radon_pCi"
 
 # Define the names of the columns to exclude
 exclude_cols <- c("radon_pCi", "rd_particle_B", "rd_particle_pCi", "radon_B",
-                  "t_pump_f", "temp_bb", "rhi", "esf_bb", "distToLovi", 
+                  "t_pump_f", "temp_bb", "rhi", "esf_bb", "distToLovi", "inv_dist",
                   "datetime", "monthly_oil", "monthly_gas", "distToLovi_wells",
                   "time_hourly")
 
@@ -148,7 +155,7 @@ formula_str <- paste(response_var, "~", paste(setdiff(names(loving_hourly), excl
 
 
 # Fit the GAM model 
-hourly_v1 <- gam(as.formula(
+hourly_v1 <- mgcv::gam(as.formula(
   paste0(formula_str, "+s(as.numeric(datetime))", "+s(as.numeric(substr(time_hourly, 12, 13)))")
   ), data = loving_hourly)
 
@@ -210,3 +217,12 @@ coef(hourly_exhaust, 20)
 plot(hourly_exhaust, scale = "bic")
 coef(hourly_exhaust, 16)
 ```
+
+```{r}
+# Fitting a Gam on the BIC selected variables
+hourly_v2 <- mgcv::gam(radon_pCi~ s(as.numeric(datetime)) + no2 + temp_f + pressure_altcorr + wsp + wdr + relh + co2_ppm + ethane + propene + X1_3.butadiene + i.butane + n.butane + acetylene + benzene +s(hour), data = loving_hourly_noflares)
+
+# View the summary of the GAM model
+summary(hourly_v2)
+```
+
