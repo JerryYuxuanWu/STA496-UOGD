@@ -10,6 +10,7 @@ library(jsonlite)
 library(utils)
 library(tidyverse)
 library(lubridate)
+library(dagR)
 library(R.utils)
 library(data.table)
 
@@ -44,6 +45,32 @@ vnf_pb_new <- data.frame(datetime = POSIXct(),
                           cloud_mask = integer(),
                           stringsAsFactors = FALSE)
 ```
+```{r}
+new.lon.lat <-
+function (lon, lat, bearing, distance) 
+{
+    rad <- pi/180
+    a1 <- lat * rad
+    a2 <- lon * rad
+    tc <- bearing * rad
+    d <- distance/6378.145
+    nlat <- asin(sin(a1) * cos(d) + cos(a1) * sin(d) * cos(tc))
+    dlon <- atan2(sin(tc) * sin(d) * cos(a1), cos(d) - sin(a1) * 
+        sin(nlat))
+    nlon <- ((a2 + dlon + pi)%%(2 * pi)) - pi
+    npts <- cbind(nlon/rad, nlat/rad)
+    return(npts)
+}
+```
+
+```{r}
+# Oct 23 update, modifying the boundary to take flaring measurements
+source <- c(32.2961, -104.1089)
+north_bound <- new.lon.lat(source[2], source[1], 0, 100)
+south_bound <- new.lon.lat(source[2], source[1], 180, 100)
+west_bound <- new.lon.lat(source[2], source[1], 270, 100)
+east_bound <- new.lon.lat(source[2], source[1], 90, 100)
+```
 
 ```{r}
 start_date <- as.Date('2023-03-01')
@@ -52,9 +79,18 @@ date_sequence <- seq(start_date, end_date, by = "day")
 
 vnf.cols = c('date_mscan', 'lon_gmtco', 'lat_gmtco', 'temp_bb', 'temp_bkg',
                'esf_bb', 'rhi', 'rh', 'area_pixel', 'area_bb', 'cloud_mask')
-# arbitary boundary of pb taken from Jerry, could modify
-lon_lim <- c(-104.8058, -100.6712)
-lat_lim <- c(30.63064, 33.6984)
+# square boundary taken to be 100km from the loving's site
+
+# old limits
+# lon_lim <- c(-104.8058, -100.6712)
+# lat_lim <- c(30.63064, 33.6984)
+
+# new limits
+# lon: (-105.1716 -103.0462)
+# lat: (31.39779 33.19441)
+lon_lim <- c(west_bound[1], east_bound[1])
+lat_lim <- c(south_bound[2], north_bound[2])
+
 ```
 
 # Downloading data loop
@@ -95,5 +131,5 @@ for (date in date_sequence){
 ```
 
 ```{r}
-saveRDS(vnf_pb_new, "./pb_vnf/pb-vnf_230301-0927-v2.rds")
+saveRDS(vnf_pb_new, "./pb_vnf/pb-vnf_230301-0927-v3.rds")
 ```

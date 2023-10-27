@@ -10,7 +10,7 @@ library(geosphere)
 ```
 
 ```{r}
-flaring <- readRDS("../data/pb_vnf/pb-vnf_230301-0927-v2.rds")
+flaring <- readRDS("../data/pb_vnf/pb-vnf_230301-0927-v3.rds")
 ```
 
 ## Filtering and Processing
@@ -42,7 +42,7 @@ flaring <- flaring %>%
 
 ### Saving
 ```{r}
-saveRDS(flaring, "FlaringProcessed-v2.rds")
+saveRDS(flaring, "FlaringProcessed-v3.rds")
 ```
 
 

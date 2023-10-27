@@ -10,7 +10,7 @@ library(tidyverse)
 
 ```{r}
 # Read all the related RDS first
-flaring <- readRDS('FlaringProcessed-v2.rds')
+flaring <- readRDS('FlaringProcessed-v3.rds')
 Trailer <- readRDS('TrailerProcessed.rds')
 Weather <- readRDS('WeatherProcessed.rds')
 Wells <- readRDS('WellsProcessed0301.rds')
@@ -43,12 +43,14 @@ flaring$inv_dist <- ifelse(1 / flaring$distToLovi < 0.01, 0, 1 / flaring$distToL
 ```{r}
 # summarize a daily count flaring
 flaring_daily <- flaring %>% 
-  # commenting next line after adding inverse distance
-  # filter(distToLovi <= 20) %>% 
+  # weighted_count = sum of inv_distance
+  filter(distToLovi <= 100) %>% 
   group_by(substr(datetime, 1, 10)) %>% 
   summarize(temp_bb = mean(temp_bb),
+            closest.flare = min(distToLovi),
             distToLovi = mean(distToLovi),
             inv_dist = mean(inv_dist),
+            weighted.count = sum(inv_dist) * 100,
             rhi = mean(rhi),
             esf_bb = mean(esf_bb),
             count = n()) %>% 

@@ -1,0 +1,303 @@
+---
+title: "Loving Site Modeling for Rd-particle Using Gam"
+author: "William Zhang"
+date: "2023-10-23"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning=FALSE)
+```
+```{r, include=FALSE}
+library(tidyverse)
+library(lmtest)
+library(vip)
+library(car)
+library(mgcv)
+library(corrplot)
+library(leaps)
+library(gam)
+library(caret)
+```
+
+## Reading the data
+```{r}
+loving_daily <- readRDS("../DataProcessing/Trailer_daily_merge.rds")
+loving_hourly <- readRDS("../DataProcessing/Trailer_hourly_merge.rds")
+```
+```{r}
+# making NA count to 0
+loving_daily$count[is.na(loving_daily$count)] <- 0
+loving_hourly$count[is.na(loving_hourly$count)] <- 0
+loving_daily$weighted.count[is.na(loving_daily$weighted.count)] <- 0
+loving_hourly$weighted.count[is.na(loving_hourly$weighted.count)] <- 0
+# none flare within 100km
+loving_daily$closest.flare[is.na(loving_daily$closest.flare)] <- 100
+loving_hourly$closest.flare[is.na(loving_hourly$closest.flare)] <- 100
+```
+```{r}
+# creating a dataframe without the flares data
+loving_daily_noflares <- loving_daily %>% select(-c(temp_bb,rhi, esf_bb, distToLovi,inv_dist))
+loving_hourly_noflares <- loving_hourly %>% select(-c(temp_bb,rhi, esf_bb, distToLovi,inv_dist))
+```
+```{r}
+# Helper Function to find correlated variables above a threshold
+correlated_above_threshold <- function(cor_matrix, var_name, threshold, response) {
+  # Get the absolute values of correlations for the variable
+  cor_values <- abs(cor_matrix[var_name, ])
+  
+  # Find the variables above the threshold
+  above_threshold <- cor_values >= threshold
+  
+  # Get the names of the correlated variables above the threshold
+  correlated_names <- setdiff(names(above_threshold[above_threshold]), "rd_particle_pCi")
+  
+  # Get the correlation scores with response
+  correlated_scores<- cor_matrix[response, correlated_names]
+  
+  return (list(variables = correlated_names, scores = correlated_scores))
+}
+```
+
+## Modeling
+### Fitting on Daily
+```{r}
+# First we do it for daily
+
+# Define the response variable
+response_var <- "rd_particle_pCi_mean"
+
+# Define the names of the columns to exclude
+exclude_cols <- c("rd_particle_pCi_mean", "rd_particle_B_mean", "radon_pCi_mean", "radon_B_mean", 
+                  "temp_bb", "rhi", "esf_bb", "distToLovi", "monthly_oil", "monthly_gas", "distToLovi_wells",
+                  "inv_dist", "datetime")
+
+# Generate the formula for the GAM model
+formula_str_s <- paste(response_var, "~", paste(paste0("s(", setdiff(names(loving_daily), exclude_cols), ")"), collapse = "+"))
+formula_str <- paste(response_var, "~", paste(setdiff(names(loving_daily), exclude_cols), collapse = "+"))
+
+
+# Fit the GAM model 
+daily_v1 <- mgcv::gam(as.formula(paste0(formula_str, "+s(as.numeric(datetime))")), data = loving_daily_noflares)
+
+# View the summary of the GAM model
+summary(daily_v1)
+```
+```{r}
+plot(daily_v1)
+```
+```{r}
+# using leaps and regsubset to search for best predictors
+# exhaustive
+# not including flares and oil&gas variables
+daily_exhaust = regsubsets(
+  rd_particle_pCi_mean ~.-rd_particle_B_mean-radon_pCi_mean-radon_B_mean-monthly_oil-monthly_gas-distToLovi_wells, 
+  data = loving_daily_noflares, nvmax=30, method = "exhaustive")
+reg_summary = summary(daily_exhaust)
+```
+
+```{r}
+par(mfrow = c(2,2))
+
+plot(reg_summary$rss, xlab = "Number of Variables", ylab = "RSS", type = "l")
+plot(reg_summary$adjr2, xlab = "Number of Variables", ylab = "Adjusted RSq", type = "l")
+
+# We will now plot a red dot to indicate the model with the largest adjusted R^2 statistic.
+# The which.max() function can be used to identify the location of the maximum point of a vector
+adj_r2_max = which.max(reg_summary$adjr2) #15
+
+# The points() command works like the plot() command, except that it puts points 
+# on a plot that has already been created instead of creating a new plot
+points(adj_r2_max, reg_summary$adjr2[adj_r2_max], col ="red", cex = 2, pch = 20)
+
+# We'll do the same for C_p and BIC, this time looking for the models with the SMALLEST statistic
+plot(reg_summary$cp, xlab = "Number of Variables", ylab = "Cp", type = "l")
+cp_min = which.min(reg_summary$cp) # 9
+points(cp_min, reg_summary$cp[cp_min], col = "red", cex = 2, pch = 20)
+
+plot(reg_summary$bic, xlab = "Number of Variables", ylab = "BIC", type = "l")
+bic_min = which.min(reg_summary$bic) # 8
+points(bic_min, reg_summary$bic[bic_min], col = "red", cex = 2, pch = 20)
+```
+```{r}
+# checking coefficients of the variables selected using adjusted R^2
+plot(daily_exhaust, scale = "adjr2")
+coef(daily_exhaust, 15)
+```
+```{r}
+# checking coefficients of the variables selected using Cp
+plot(daily_exhaust, scale = "Cp")
+coef(daily_exhaust, 9)
+```
+```{r}
+# checking coefficients of the variables selected using BIC
+plot(daily_exhaust, scale = "bic")
+coef(daily_exhaust, 8)
+```
+```{r}
+# Fitting a Gam on the BIC selected variables
+daily_v2 <- mgcv::gam(rd_particle_pCi_mean ~ co_mean + o3_mean + wsp_mean + co2_ppm_mean + ch4_mean + h2o_sync_mean + ethene_mean  + i.pentane_mean + n.pentane_mean  + n.octane_mean + toluene_mean + m.p.xylene_mean + o.xylene_mean, data = loving_daily_noflares)
+
+# View the summary of the GAM model
+summary(daily_v2)
+```
+
+```{r, eval=FALSE}
+# Fit the GAM model with ridge regression
+daily_v2 <- mgcv::gam(as.formula(
+  paste0(formula_str, "+s(as.numeric(as.Date(datetime)))")
+  ), data = loving_daily, method = "REML", select = TRUE, family = gaussian, 
+  control = mgcv::gam.control(maxit = 100, trace = TRUE))
+
+# View the summary of the GAM model
+summary(daily_v2)
+```
+
+```{r}
+# correlation matrix
+cor_matrix = cor(loving_daily_noflares %>% select(-c("radon_B_mean", "rd_particle_B_mean","radon_pCi_mean","rd_particle_pCi_mean",  "datetime", "monthly_oil", "monthly_gas", "distToLovi_wells")) %>% na.omit())
+corrplot.mixed(cor_matrix, order="AOE", number.cex = 0.5, tl.pos = 'lt')
+```
+
+### Fitting on Hourly
+```{r}
+# For hourly
+
+# Define the response variable
+response_var <- "rd_particle_pCi"
+
+# Define the names of the columns to exclude
+exclude_cols <- c("radon_pCi", "rd_particle_B", "rd_particle_pCi", "radon_B",
+                  "t_pump_f", "temp_bb", "rhi", "esf_bb", "distToLovi", "inv_dist",
+                  "datetime", "monthly_oil", "monthly_gas", "distToLovi_wells",
+                  "time_hourly")
+
+# Generate the formula for the GAM model
+formula_str_s <- paste(response_var, "~", paste(paste0("s(", setdiff(names(loving_hourly), exclude_cols), ")"), collapse = "+"))
+formula_str <- paste(response_var, "~", paste(setdiff(names(loving_hourly), exclude_cols), collapse = "+"))
+
+
+# Fit the GAM model 
+hourly_v1 <- mgcv::gam(as.formula(
+  paste0(formula_str, "+s(as.numeric(datetime))", "+s(as.numeric(substr(time_hourly, 12, 13)))")
+  ), data = loving_hourly)
+
+# View the summary of the GAM model
+summary(hourly_v1)
+```
+
+```{r}
+# using leaps and regsubset to search for best predictors
+# exhaustive
+# not including flares and oil&gas variables
+
+# adding a hour variable first
+loving_hourly_noflares <- loving_hourly_noflares %>% mutate(hour = as.numeric(substr(time_hourly, 12, 13)))
+
+hourly_exhaust = regsubsets(
+  radon_pCi~.-time_hourly -rd_particle_B-rd_particle_pCi-radon_B-monthly_oil-monthly_gas-distToLovi_wells, 
+  data = loving_hourly_noflares, nvmax=30, method = "exhaustive")
+reg_summary = summary(hourly_exhaust)
+```
+
+
+```{r}
+par(mfrow = c(2,2))
+
+plot(reg_summary$rss, xlab = "Number of Variables", ylab = "RSS", type = "l")
+plot(reg_summary$adjr2, xlab = "Number of Variables", ylab = "Adjusted RSq", type = "l")
+
+# We will now plot a red dot to indicate the model with the largest adjusted R^2 statistic.
+# The which.max() function can be used to identify the location of the maximum point of a vector
+adj_r2_max = which.max(reg_summary$adjr2) #25
+
+# The points() command works like the plot() command, except that it puts points 
+# on a plot that has already been created instead of creating a new plot
+points(adj_r2_max, reg_summary$adjr2[adj_r2_max], col ="red", cex = 2, pch = 20)
+
+# We'll do the same for C_p and BIC, this time looking for the models with the SMALLEST statistic
+plot(reg_summary$cp, xlab = "Number of Variables", ylab = "Cp", type = "l")
+cp_min = which.min(reg_summary$cp) # 20
+points(cp_min, reg_summary$cp[cp_min], col = "red", cex = 2, pch = 20)
+
+plot(reg_summary$bic, xlab = "Number of Variables", ylab = "BIC", type = "l")
+bic_min = which.min(reg_summary$bic) # 16
+points(bic_min, reg_summary$bic[bic_min], col = "red", cex = 2, pch = 20)
+```
+
+```{r}
+# checking coefficients of the variables selected using adjusted R^2
+plot(hourly_exhaust, scale = "adjr2")
+coef(hourly_exhaust, 25)
+```
+```{r}
+# checking coefficients of the variables selected using Cp
+plot(hourly_exhaust, scale = "Cp")
+coef(hourly_exhaust, 20)
+```
+```{r}
+# checking coefficients of the variables selected using adjusted R^2
+plot(hourly_exhaust, scale = "bic")
+coef(hourly_exhaust, 16)
+```
+
+```{r}
+# Fitting a Gam on the BIC selected variables
+hourly_v2 <- mgcv::gam(radon_pCi~ s(as.numeric(datetime)) + no2 + temp_f + pressure_altcorr + wsp + wdr + relh + co2_ppm + ethane + propene + X1_3.butadiene + n.butane + acetylene + benzene +s(hour), data = loving_hourly_noflares)
+
+# View the summary of the GAM model
+summary(hourly_v2)
+```
+```{r}
+plot(hourly_v2)
+```
+
+
+### Exhaustive Search and removing correlated predictors
+```{r}
+# correlation matrix
+M_hourly = cor(loving_hourly_noflares %>% select(-c( "datetime", "monthly_oil", "monthly_gas", "distToLovi_wells", 
+                                                     "radon_B", "rd_particle_B", "radon_pCi","time_hourly")) %>% na.omit())
+corrplot.mixed(M_hourly, order="AOE", number.cex = 0.5, tl.pos = "lt")
+```
+
+```{r}
+remaining_predictors <- setdiff(colnames(M_hourly), "rd_particle_pCi")
+for (var_name in setdiff(colnames(M_hourly), "rd_particle_pCi")) {
+  # skip the variable if it already has been removed
+  if (!(var_name %in% remaining_predictors)){
+    next
+  }
+  # find variables above threshold and return their correlation with response
+  top_cor_vars <- correlated_above_threshold(M_hourly, var_name, 0.7, "rd_particle_pCi")
+  
+  # only keep the variables that are still in remaining_predictors
+  top_cor_vars$variables <- intersect(top_cor_vars$variable, remaining_predictors)
+  top_cor_vars$scores <- top_cor_vars$scores[top_cor_vars$variable]
+  # if var_name is not correlated with any other variable above threshold
+  if (length(top_cor_vars$variables) == 1){
+    next
+  }
+  
+  best <- names(which.max(abs(top_cor_vars$scores)))
+  to_remove <- setdiff(top_cor_vars$variables, best)
+  
+  # print(cat("varname", var_name))
+  # print(cat("kicking out", to_remove))
+  # remove the to_remove variables from remaining_predictors
+  remaining_predictors <- setdiff(remaining_predictors, to_remove)
+}
+remaining_predictors
+```
+
+```{r}
+M_hourly_2 <- cor(loving_hourly_noflares %>% select("rd_particle_pCi", "co",  "temp_f", "pressure_altcorr", "wsp", "wdr", "relh","rain", "solr","ch4", "ethene", "X1_3.butadiene", "isoprene" , "m.p.xylene", "hour",  "weighted.count") %>% na.omit())
+corrplot.mixed(M_hourly_2, number.cex = 0.5, tl.pos = "lt")
+```
+
+```{r}
+# fit a Gam on that
+hourly_no_cor <- mgcv::gam(rd_particle_pCi ~ co + temp_f + pressure_altcorr + wsp + wdr + relh + rain + ch4 + ethene + X1_3.butadiene + isoprene + m.p.xylene + hour + weighted.count, data = loving_hourly_noflares)
+summary(hourly_no_cor)
+```
+
