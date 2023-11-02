@@ -1,5 +1,5 @@
 ---
-title: "Loving Site Modeling for Radon Using Gam"
+title: "XGBoost"
 author: "William Zhang"
 date: "2023-10-08"
 output: html_document
@@ -8,7 +8,7 @@ output: html_document
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(warning=FALSE)
 ```
-```{r}
+```{r, message=FALSE}
 library(xgboost)
 library(caret)
 library(tidyverse)
@@ -31,9 +31,10 @@ loving_hourly$closest.flare[is.na(loving_hourly$closest.flare)] <- 100
 
 # creating a dataframe without the flares and production data
 loving_daily_noflares <- loving_daily %>% select(-c(temp_bb,rhi, esf_bb, distToLovi,inv_dist, distToLovi_wells, monthly_oil, monthly_gas)) %>% na.omit() %>% mutate(datetime = as.numeric(datetime))
-loving_hourly_noflares <- loving_hourly %>% select(-c(temp_bb,rhi, esf_bb, distToLovi,inv_dist, distToLovi_wells, monthly_oil, monthly_gas)) %>% na.omit() %>% mutate(datetime = as.numeric(datetime))
+loving_hourly_noflares <- loving_hourly %>% select(-c(temp_bb,rhi, esf_bb, distToLovi,inv_dist, distToLovi_wells, monthly_oil, monthly_gas, time_hourly)) %>% na.omit() %>% mutate(datetime = as.numeric(datetime))
 ```
 
+### For Daily
 ```{r}
 set.seed(1026)
 ```
@@ -44,17 +45,45 @@ trainIndex <- createDataPartition(loving_daily_noflares$radon_pCi_mean, p = .8,
                                   times = 1)
 
 daily_Train <- loving_daily_noflares[ trainIndex,]
-daily_Train <- list(data = daily_Train %>% select(-c(radon_B_mean, rd_particle_B_mean, rd_particle_pCi_mean)), label = daily_Train$radon_pCi_mean)
+daily_Train <- xgb.DMatrix(data = as.matrix(daily_Train %>% select(-c(radon_B_mean, rd_particle_B_mean, rd_particle_pCi_mean, radon_pCi_mean))), label = daily_Train$radon_pCi_mean)
 daily_Test  <- loving_daily_noflares[-trainIndex,]
-daily_Test <- list(data = daily_Test %>% select(-c(radon_B_mean, rd_particle_B_mean, rd_particle_pCi_mean)), label = daily_Test$radon_pCi_mean)
+daily_Test <- xgb.DMatrix(data = as.matrix(daily_Test %>% select(-c(radon_B_mean, rd_particle_B_mean, rd_particle_pCi_mean, radon_pCi_mean))), label = daily_Test$radon_pCi_mean)
 ```
 ```{r}
-bstSparse <- xgboost(data = as.matrix(daily_Train$data), label = daily_Train$label, max.depth = 2, eta = 1, nthread = 4, nrounds = 2, objective = "reg:squarederror", verbose = TRUE)
+watchlist <- list(train=daily_Train, test=daily_Test)
+daily_xgb <- xgb.train(data = daily_Train, watchlist = watchlist, max.depth = 2, eta = 0.3, nthread = 4, nrounds = 100, early_stopping_rounds = 5,objective = "reg:squarederror", verbose = TRUE)
 
+```
+```{r}
+importance_matrix <- xgb.importance(model = daily_xgb)
+xgb.plot.importance(importance_matrix = importance_matrix)
+```
+```{r}
+xgb.plot.multi.trees(feature_names = names(daily_Train), model = daily_xgb)
+```
+
+
+### For Hourly
+```{r}
+trainIndex <- createDataPartition(loving_hourly_noflares$radon_pCi, p = .8, 
+                                  list = FALSE, 
+                                  times = 1)
+
+hourly_Train <- loving_hourly_noflares[ trainIndex,]
+hourly_Train <- xgb.DMatrix(data = as.matrix(hourly_Train %>% select(-c(radon_B, rd_particle_B, rd_particle_pCi, radon_pCi))), label = hourly_Train$radon_pCi)
+hourly_Test  <- loving_hourly_noflares[-trainIndex,]
+hourly_Test <- xgb.DMatrix(data = as.matrix(hourly_Test %>% select(-c(radon_B, rd_particle_B, rd_particle_pCi, radon_pCi))), label = hourly_Test$radon_pCi)
+```
+```{r}
+watchlist <- list(train=hourly_Train, test=hourly_Test)
+hourly_xgb <- xgb.train(data = hourly_Train, watchlist = watchlist, max.depth = 2, eta = 1, nthread = 4, nrounds = 100, early_stopping_rounds = 5,objective = "reg:squarederror", verbose = TRUE)
+```
+```{r}
+importance_matrix <- xgb.importance(model = hourly_xgb)
+xgb.plot.importance(importance_matrix = importance_matrix)
 ```
 
 ```{r}
-pred <- predict(bstSparse, as.matrix(daily_Test$data))
-RMSE(pred, daily_Test$label)
+xgb.plot.multi.trees(feature_names = names(hourly_Train), model = hourly_xgb)
 ```
 
