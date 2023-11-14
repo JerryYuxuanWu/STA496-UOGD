@@ -4,6 +4,11 @@ author: "William Zhang"
 date: "2023-09-28"
 output: html_document
 ---
+```{r}
+library(geosphere)
+library(tidyverse)
+```
+
 ## Reading data
 ```{r}
 wells_clean <- readRDS("../data/wells/cleaned_wells_cb.rds")
