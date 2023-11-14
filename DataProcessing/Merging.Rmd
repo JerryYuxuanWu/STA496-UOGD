@@ -100,10 +100,10 @@ Trailer_daily_merge <- merge(x = Trailer_daily_merge,
 
 ```{r}
 # some additional cleaning after merging
-Trailer_hourly_merge <- Trailer_hourly_merge %>% select(-c(datetime_monthly)) %>% 
+Trailer_hourly_merge <- Trailer_hourly_merge %>% select(-c(datetime_monthly, h2o_sync)) %>% 
   filter(!is.na(radon_pCi)) %>% filter(!is.na(rd_particle_pCi))
 
-Trailer_daily_merge <- Trailer_daily_merge %>% select(-c(datetime_monthly)) %>% 
+Trailer_daily_merge <- Trailer_daily_merge %>% select(-c(datetime_monthly, h2o_sync_mean)) %>% 
   filter(!is.na(radon_pCi_mean)) %>% filter(!is.na(rd_particle_pCi_mean))
 ```
 

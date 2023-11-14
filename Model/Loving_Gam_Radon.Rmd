@@ -64,6 +64,11 @@ top_correlated <- function(cor_matrix, var_name, top_n = 5) {
 ## Modeling
 ### Fitting on Daily
 ```{r}
+cor_matrix = cor(loving_daily_noflares %>% select(-c("radon_B_mean", "rd_particle_B_mean", "datetime", "monthly_oil", "monthly_gas", "distToLovi_wells", "isoprene_mean", "m.p.xylene_mean", "ethyl.benzene_mean")) %>% na.omit())
+corrplot.mixed(cor_matrix, number.cex = 0.4, tl.pos = 'lt', order = 'original')
+```
+
+```{r}
 # First we do it for daily
 
 # Define the response variable
@@ -160,17 +165,20 @@ daily_v2 <- mgcv::gam(as.formula(
 summary(daily_v2)
 ```
 
-```{r}
-# correlation matrix
-M = cor(loving_hourly %>% select(-c("temp_bb", "rhi", "esf_bb", "distToLovi", "inv_dist", 
-                  "datetime", "monthly_oil", "monthly_gas", "distToLovi_wells",
-                  "time_hourly")) %>% na.omit())
-corrplot.mixed(M, order="AOE", number.cex = 0.5, tl.pos = "lt")
-```
+
 
 
 
 ### Fitting on Hourly
+
+```{r}
+# correlation matrix
+M_hourly = cor(loving_hourly_noflares %>% select(-c( "datetime", "monthly_oil", "monthly_gas", "distToLovi_wells", 
+                                                     "radon_B", "rd_particle_B","time_hourly", 
+                                                     "isoprene", "m.p.xylene", "ethyl.benzene")) %>% na.omit())
+corrplot.mixed(M_hourly, order="original", number.cex = 0.4, tl.pos = "lt")
+```
+
 ```{r}
 # For hourly
 

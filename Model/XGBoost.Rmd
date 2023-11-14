@@ -61,7 +61,9 @@ xgb.plot.importance(importance_matrix = importance_matrix)
 ```{r}
 xgb.plot.multi.trees(feature_names = names(daily_Train), model = daily_xgb)
 ```
-
+```{r}
+xgb.plot.tree( model = daily_xgb)
+```
 
 ### For Hourly
 ```{r}

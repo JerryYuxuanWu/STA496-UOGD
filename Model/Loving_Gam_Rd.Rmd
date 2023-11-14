@@ -136,7 +136,7 @@ coef(daily_exhaust, 8)
 ```
 ```{r}
 # Fitting a Gam on the BIC selected variables
-daily_v2 <- mgcv::gam(rd_particle_pCi_mean ~ co_mean + o3_mean + wsp_mean + co2_ppm_mean + ch4_mean + h2o_sync_mean + ethene_mean  + i.pentane_mean + n.pentane_mean  + n.octane_mean + toluene_mean + m.p.xylene_mean + o.xylene_mean, data = loving_daily_noflares)
+daily_v2 <- mgcv::gam(rd_particle_pCi_mean ~ co_mean + o3_mean + wsp_mean + co2_ppm_mean + ch4_mean + ethene_mean  + i.pentane_mean + n.pentane_mean  + n.octane_mean + toluene_mean + m.p.xylene_mean + o.xylene_mean, data = loving_daily_noflares)
 
 # View the summary of the GAM model
 summary(daily_v2)
@@ -155,8 +155,10 @@ summary(daily_v2)
 
 ```{r}
 # correlation matrix
-cor_matrix = cor(loving_daily_noflares %>% select(-c("radon_B_mean", "rd_particle_B_mean","radon_pCi_mean","rd_particle_pCi_mean",  "datetime", "monthly_oil", "monthly_gas", "distToLovi_wells")) %>% na.omit())
-corrplot.mixed(cor_matrix, order="AOE", number.cex = 0.5, tl.pos = 'lt')
+testRes = cor.mtest(loving_daily_noflares %>% select(-c("radon_B_mean", "rd_particle_B_mean", "datetime", "monthly_oil", "monthly_gas", "distToLovi_wells", "isoprene_mean", "m.p.xylene_mean", "ethyl.benzene_mean")) %>% na.omit(), conf.level = 0.95)
+
+cor_matrix = cor(loving_daily_noflares %>% select(-c("radon_B_mean", "rd_particle_B_mean", "datetime", "monthly_oil", "monthly_gas", "distToLovi_wells", "isoprene_mean", "m.p.xylene_mean", "ethyl.benzene_mean")) %>% na.omit())
+corrplot.mixed(cor_matrix, number.cex = 0.4, tl.pos = 'lt', order = 'original')
 ```
 
 ### Fitting on Hourly
@@ -257,8 +259,9 @@ plot(hourly_v2)
 ```{r}
 # correlation matrix
 M_hourly = cor(loving_hourly_noflares %>% select(-c( "datetime", "monthly_oil", "monthly_gas", "distToLovi_wells", 
-                                                     "radon_B", "rd_particle_B", "radon_pCi","time_hourly")) %>% na.omit())
-corrplot.mixed(M_hourly, order="AOE", number.cex = 0.5, tl.pos = "lt")
+                                                     "radon_B", "rd_particle_B","time_hourly", 
+                                                     "isoprene", "m.p.xylene", "ethyl.benzene")) %>% na.omit())
+corrplot.mixed(M_hourly, order="original", number.cex = 0.4, tl.pos = "lt")
 ```
 
 ```{r}
