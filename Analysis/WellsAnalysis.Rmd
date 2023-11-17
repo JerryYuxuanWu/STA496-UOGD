@@ -1,0 +1,74 @@
+---
+title: "WellsAnalysis"
+author: "William Zhang"
+date: "2023-09-28"
+output: html_document
+---
+```{r}
+library(geosphere)
+library(tidyverse)
+```
+```{r}
+wells_processed <- readRDS("../DataProcessing/WellsProcessed0301.rds")
+wells_clean <- readRDS("../data/wells/cleaned_wells_cb.rds")
+wells_prod <- readRDS("../data/wells/cb_wells_prod.rds")
+```
+
+```{r}
+# lon, lat of Loving monitor:  (-104.1089, 32.2961)
+loving_lonlat <- c(-104.1089, 32.2961)
+distance_km_lov <- function(long, lati){
+  start <- c(long, lati)
+  distGeo(start, loving_lonlat) / 1000
+}
+
+# 32.297345,-104.109386
+loving_lonlat2 <- c(-104.1089, 32.2961)
+distance_km_lov <- function(long, lati){
+  start <- c(long, lati)
+  distGeo(start, loving_lonlat) / 1000
+}
+
+wells_prod <- wells_prod %>% select(-c("drill_type", "spud_date", "completion_date", "first_prod_date", "last_prod_date", "Operator.Company.Name"))%>% 
+  filter(prod_date >= "2023-03-01") %>% 
+  mutate(distToLovi = mapply(distance_km_lov, uog_lon, uog_lat))
+```
+
+```{r}
+max(wells_prod$distToLovi)
+```
+
+```{r}
+# Wells production
+wells_prod$monthly_oil[is.na(wells_prod$monthly_oil)] <- 0
+wells_prod$monthly_gas[is.na(wells_prod$monthly_gas)] <- 0
+
+wells_prod %>% select(-c("uog_lon", "uog_lat", "well_status_p", "well_status", "prod_type_p", "production_type")) %>% 
+  mutate(distCat = case_when(distToLovi <= 5 ~ "<5km",
+                             distToLovi <= 10 & distToLovi > 5 ~ "<10km",
+                             distToLovi <= 20 & distToLovi > 10 ~ "<20km",
+                             distToLovi <= 30 & distToLovi > 20 ~ "<30km",
+                             TRUE ~ ">30km")) %>%  
+  group_by(prod_date, distCat) %>% 
+  summarize(count = n(),
+            total_oil = sum(monthly_oil),
+            total_gas = sum(monthly_gas))
+```
+```{r}
+# Wells
+wells_clean<- wells_clean %>% filter(last_prod_date >= "2023-03-01") %>% 
+  select(-c("drill_type", "spud_date", "completion_date", "first_prod_date", "last_prod_date", "Operator.Company.Name"))%>% 
+  mutate(distToLovi = mapply(distance_km_lov, uog_lon, uog_lat))
+```
+```{r}
+wells_clean %>% 
+  mutate(distCat = case_when(distToLovi <= 5 ~ "<5km",
+                             distToLovi <= 10 & distToLovi > 5 ~ "<10km",
+                             distToLovi <= 20 & distToLovi > 10 ~ "<20km",
+                             distToLovi <= 30 & distToLovi > 20 ~ "<30km",
+                             TRUE ~ ">30km")) %>%  
+  group_by(distCat) %>% 
+  summarize(count = n())
+```
+
+

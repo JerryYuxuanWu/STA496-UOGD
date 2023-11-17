@@ -38,6 +38,14 @@ loving_hourly$closest.flare[is.na(loving_hourly$closest.flare)] <- 100
 # creating a dataframe without the flares data
 loving_daily_noflares <- loving_daily %>% select(-c(temp_bb,rhi, esf_bb, distToLovi,inv_dist))
 loving_hourly_noflares <- loving_hourly %>% select(-c(temp_bb,rhi, esf_bb, distToLovi,inv_dist))
+
+loving_daily_noflares <- loving_daily_noflares %>% drop_na(toluene_mean, n.octane_mean)
+loving_hourly_noflares <- loving_hourly_noflares %>% drop_na(toluene, n.octane)
+```
+```{r}
+# save the datasets to rds for other file to use
+saveRDS(loving_daily_noflares, "daily_radon.rds")
+saveRDS(loving_hourly_noflares, "hourly_radon.rds")
 ```
 ```{r}
 # Helper Function to find top 5 correlated variables
@@ -99,7 +107,7 @@ plot(daily_v1)
 # not including flares and oil&gas variables
 daily_exhaust = regsubsets(
   radon_pCi_mean~.-rd_particle_B_mean-rd_particle_pCi_mean-radon_B_mean-monthly_oil-monthly_gas-distToLovi_wells, 
-  data = loving_daily_noflares, nvmax=30, method = "exhaustive")
+  data = loving_daily_noflares, nvmax=40, method = "exhaustive")
 reg_summary = summary(daily_exhaust)
 ```
 
@@ -111,7 +119,7 @@ plot(reg_summary$adjr2, xlab = "Number of Variables", ylab = "Adjusted RSq", typ
 
 # We will now plot a red dot to indicate the model with the largest adjusted R^2 statistic.
 # The which.max() function can be used to identify the location of the maximum point of a vector
-adj_r2_max = which.max(reg_summary$adjr2) #21
+adj_r2_max = which.max(reg_summary$adjr2) #22
 
 # The points() command works like the plot() command, except that it puts points 
 # on a plot that has already been created instead of creating a new plot
@@ -119,36 +127,32 @@ points(adj_r2_max, reg_summary$adjr2[adj_r2_max], col ="red", cex = 2, pch = 20)
 
 # We'll do the same for C_p and BIC, this time looking for the models with the SMALLEST statistic
 plot(reg_summary$cp, xlab = "Number of Variables", ylab = "Cp", type = "l")
-cp_min = which.min(reg_summary$cp) # 14
+cp_min = which.min(reg_summary$cp) # 15
 points(cp_min, reg_summary$cp[cp_min], col = "red", cex = 2, pch = 20)
 
 plot(reg_summary$bic, xlab = "Number of Variables", ylab = "BIC", type = "l")
-bic_min = which.min(reg_summary$bic) # 11
+bic_min = which.min(reg_summary$bic) # 12
 points(bic_min, reg_summary$bic[bic_min], col = "red", cex = 2, pch = 20)
 ```
 ```{r}
 # checking coefficients of the variables selected using adjusted R^2
 plot(daily_exhaust, scale = "adjr2")
-coef(daily_exhaust, 21)
+coef(daily_exhaust, 22)
 ```
 ```{r}
 # checking coefficients of the variables selected using Cp
 plot(daily_exhaust, scale = "Cp")
-coef(daily_exhaust, 14)
+coef(daily_exhaust, 15)
 ```
 ```{r}
 # checking coefficients of the variables selected using BIC
 plot(daily_exhaust, scale = "bic")
-coef(daily_exhaust, 11)
-```
-
-```{r}
-colSums(is.na(loving_daily_noflares))
+coef(daily_exhaust, 12)
 ```
 
 ```{r}
 # Fitting a Gam on the BIC selected variables
-daily_v2 <- mgcv::gam(radon_pCi_mean ~ temp_f_mean + pressure_altcorr_mean + wsp_mean + co2_ppm_mean + ch4_mean + h2o_sync_mean + ethene_mean + acetylene_mean + cyclopentane_mean + i.pentane_mean + n.pentane_mean + s(as.numeric(datetime)), data = loving_daily_noflares)
+daily_v2 <- mgcv::gam(radon_pCi_mean ~ temp_f_mean + pressure_altcorr_mean + wsp_mean + co2_ppm_mean + ch4_mean + ethene_mean + acetylene_mean + cyclopentane_mean + i.pentane_mean + n.pentane_mean + s(as.numeric(datetime)), data = loving_daily_noflares)
 
 # View the summary of the GAM model
 summary(daily_v2)
@@ -189,7 +193,7 @@ response_var <- "radon_pCi"
 exclude_cols <- c("radon_pCi", "rd_particle_B", "rd_particle_pCi", "radon_B",
                   "t_pump_f", "temp_bb", "rhi", "esf_bb", "distToLovi", "inv_dist",
                   "datetime", "monthly_oil", "monthly_gas", "distToLovi_wells",
-                  "time_hourly")
+                  "time_hourly", "hour")
 
 # Generate the formula for the GAM model
 formula_str_s <- paste(response_var, "~", paste(paste0("s(", setdiff(names(loving_hourly), exclude_cols), ")"), collapse = "+"))
@@ -198,7 +202,7 @@ formula_str <- paste(response_var, "~", paste(setdiff(names(loving_hourly), excl
 
 # Fit the GAM model 
 hourly_v1 <- mgcv::gam(as.formula(
-  paste0(formula_str, "+s(as.numeric(datetime))", "+s(as.numeric(substr(time_hourly, 12, 13)))")
+  paste0(formula_str, "+s(as.numeric(datetime))", "+s(hour)")
   ), data = loving_hourly)
 
 # View the summary of the GAM model
@@ -228,7 +232,7 @@ plot(reg_summary$adjr2, xlab = "Number of Variables", ylab = "Adjusted RSq", typ
 
 # We will now plot a red dot to indicate the model with the largest adjusted R^2 statistic.
 # The which.max() function can be used to identify the location of the maximum point of a vector
-adj_r2_max = which.max(reg_summary$adjr2) #25
+adj_r2_max = which.max(reg_summary$adjr2) #24
 
 # The points() command works like the plot() command, except that it puts points 
 # on a plot that has already been created instead of creating a new plot
@@ -247,7 +251,7 @@ points(bic_min, reg_summary$bic[bic_min], col = "red", cex = 2, pch = 20)
 ```{r}
 # checking coefficients of the variables selected using adjusted R^2
 plot(hourly_exhaust, scale = "adjr2")
-coef(hourly_exhaust, 25)
+coef(hourly_exhaust, 24)
 ```
 ```{r}
 # checking coefficients of the variables selected using Cp
@@ -262,7 +266,7 @@ coef(hourly_exhaust, 16)
 
 ```{r}
 # Fitting a Gam on the BIC selected variables
-hourly_v2 <- mgcv::gam(radon_pCi~ s(as.numeric(datetime)) + no2 + temp_f + pressure_altcorr + wsp + wdr + relh + co2_ppm + ethane + propene + X1_3.butadiene + n.butane + acetylene + benzene +s(hour), data = loving_hourly_noflares)
+hourly_v2 <- mgcv::gam(radon_pCi~ s(as.numeric(datetime)) + no2 + temp_f + pressure_altcorr + wsp + wdr + relh + co2_ppm + ethane + propene + X1_3.butadiene + i.butane + n.butane + acetylene + benzene +s(hour), data = loving_hourly_noflares)
 
 # View the summary of the GAM model
 summary(hourly_v2)
