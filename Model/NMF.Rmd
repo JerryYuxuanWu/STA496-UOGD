@@ -1,0 +1,211 @@
+---
+title: "NMF"
+author: "William Zhang"
+date: "2023-11-19"
+output: html_document
+---
+```{r}
+# load the packages
+library(NMF)
+library(dplyr)
+```
+
+```{r}
+# read the radon data
+hourly_radon <- readRDS("hourly_radon.rds")
+```
+```{r}
+# remove NAs
+hourly_radon_nona <- hourly_radon %>% select(-c(distToLovi_wells, monthly_oil, monthly_gas)) %>% na.omit()
+
+# remove all variables except the Vocs
+hourly_vocs <- hourly_radon_nona %>% select(-c(datetime, time_hourly, radon_B, radon_pCi, rd_particle_B, rd_particle_pCi, co, no, no2, temp_f, pressure_altcorr, rain, relh, wsp, wdr, solr, co2_ppm, hour, closest.flare, count, weighted.count))
+```
+```{r}
+# find the min for background-levels
+background_levels <- sapply(hourly_vocs, min)
+```
+```{r}
+background_levels
+```
+```{r}
+#adjusting by subtracting the minimum value
+adjusted_hourly_vocs <- as.data.frame(sapply(names(hourly_vocs), function(tracer){ 
+  hourly_vocs[[tracer]] - background_levels[[tracer]]
+}))
+```
+
+```{r}
+colSums(adjusted_hourly_vocs == 0)
+```
+```{r}
+adjusting_negligible_background_from_LOD <- function(data_frame, LOD){ #adjustments that were made according to paper
+  adjusted <- data_frame
+  for (x in names(data_frame)){
+    
+    min_value <- min(data_frame[x], na.rm = TRUE)
+    max_value <- max(data_frame[x], na.rm = TRUE)
+    if (min_value < 2 * LOD || max_value > 100 * LOD ){
+      adjusted[[x]] <- -100
+    }
+  }
+  return (adjusted)
+}
+```
+```{r}
+# split the VOCs based on their LOD levels, take out the different ones
+# o3, nox, ch4, ethane, propane, benzene, acetylene
+nox_col <- adjusted_hourly_vocs %>% select(nox)
+o3_col <- adjusted_hourly_vocs %>% select(o3)
+ch4_col <- adjusted_hourly_vocs %>% select(ch4)
+ethane_col <- adjusted_hourly_vocs %>% select(ethane)
+propane_col <- adjusted_hourly_vocs %>% select(propane)
+benzene_col <- adjusted_hourly_vocs %>% select(benzene)
+acetylene_col <- adjusted_hourly_vocs %>% select(acetylene)
+rest_col <- adjusted_hourly_vocs %>% select(-nox, -o3, -ch4, -ethane, -propane, -benzene, -acetylene)
+```
+```{r}
+# make the adjustments
+nox <- adjusting_negligible_background_from_LOD(nox_col, 0.05)
+o3 <- adjusting_negligible_background_from_LOD(o3_col, 1)
+ch4 <- adjusting_negligible_background_from_LOD(ch4_col, 0.05)
+ethane <- adjusting_negligible_background_from_LOD(ethane_col, 0.1)
+propane <- adjusting_negligible_background_from_LOD(propane_col, 0.05)
+benzene <- adjusting_negligible_background_from_LOD(benzene_col, 0.005)
+acetylene <- adjusting_negligible_background_from_LOD(acetylene_col, 0.01)
+rest <- adjusting_negligible_background_from_LOD(rest_col, 0.01)
+```
+
+```{r}
+# replace negative values with random values between 0 and 0.5*LOD
+replace_negatives_with_random <- function(data_frame, LOD){
+  adjusted <- data_frame
+  for (x in names(data_frame)){
+    negatives_exist <- any(data_frame[[x]] < 0, na.rm = TRUE)
+    if (negatives_exist){
+      adjusted[[x]] <- runif(nrow(data_frame), 0, 0.5 * LOD)
+    }
+  }
+  return (adjusted)
+}
+```
+```{r}
+nox <- replace_negatives_with_random(nox, 0.05)
+o3 <- replace_negatives_with_random(o3, 1)
+ch4 <- replace_negatives_with_random(ch4, 0.05)
+ethane <- replace_negatives_with_random(ethane, 0.1)
+propane <- replace_negatives_with_random(propane, 0.05)
+benzene <- replace_negatives_with_random(benzene, 0.005)
+acetylene <- replace_negatives_with_random(acetylene, 0.01)
+rest <- replace_negatives_with_random(rest, 0.01)
+```
+```{r}
+# Merging
+Merged_VOCs <- cbind(nox, o3, ch4, ethane, propane, benzene, acetylene, rest)
+```
+```{r}
+#normalizing function
+normalize_column <- function(column){
+  background <- quantile(column, 0)
+  max <- quantile(column, 0.99)
+  return ((column - background)/(max - background))
+}
+```
+```{r}
+#Getting the Transpose
+Transpose <-Merged_VOCs
+rownames(Transpose) <- as.character(Transpose[,1])
+Transpose_Matrix <- t(as.matrix(Transpose)) 
+
+number_row<- dim(Transpose_Matrix)[1] #store number of rows (used for checking)
+number_column<- dim(Transpose_Matrix)[2] #store number of columns
+
+```
+
+## NMF section
+```{r}
+n_rows <- nrow(Transpose_Matrix)
+n_cols <- ncol(Transpose_Matrix)
+weight_matrix <- matrix(0, nrow(Transpose_Matrix), ncol(Transpose_Matrix))
+LOD_vector = c(0.05, 1, 0.05, 0.1, 0.05, 0.005, 0.01) # hardcoded values for LOD_vector
+# the orders are the same as the orders for the rows in Transpose_matrix; nox, o3, ch4, ...
+Rest = rep(0.01, 16) # rest of the VOCs are 0.01
+LOD_vector_merged = c(LOD_vector, Rest) #merged the two results above
+```
+
+
+```{r}
+#creating uncertainty Matrix ???
+for (i in 1:n_rows) { 
+  for (j in 1:n_cols) {
+    xij <- Transpose_Matrix[i, j]
+    LOD <- LOD_vector_merged[i]  # Get LOD value for this row 
+    if (i == 3){ # equation 6, ch4
+      weight_matrix[i, j] <- sqrt(xij)
+    }
+    else if (xij <= LOD) {
+      weight_matrix[i, j] <- 2 * LOD #equation 5a) in reference paper
+    } else {
+      weight_matrix[i, j] <- sqrt(((0.1 * xij)**2 + LOD**2))  #equation 5c) in reference paper
+    }
+  }
+}
+```
+
+```{r}
+set.seed(123)
+```
+
+```{r}
+#function below used to estimate the optimal rank and will be used in the nmf() function. 
+estimate_rank <- nmfEstimateRank(Transpose_Matrix, 2:20, method = "ls-nmf", weight = weight_matrix, 5)
+# changing the range of rank to 2:20 from 4:20
+# I'm guessing nrun = 5
+measures <- estimate_rank$measures
+fit <- estimate_rank$fit
+consensus <- estimate_rank$consensus
+```
+```{r}
+plot(estimate_rank)
+```
+
+
+```{r}
+# the choice of the optimal rank needs to be discussed
+output <- nmf(Transpose_Matrix, rank = 9, weight = weight_matrix, method = "ls-nmf")
+# why was it initally W <- basis(fit)? that gives W is NULL for me
+W <- basis(output)
+H <- coef(output)
+```
+
+```{r}
+# Plot source contributions for the first basis vector
+barplot(W[, 1], names.arg = rownames(Transpose_Matrix), main = "Source Contributions to Basis 1")
+
+```
+```{r}
+barplot(W[, 2], names.arg = rownames(Transpose_Matrix), main = "Source Contributions to Basis 2")
+```
+
+```{r}
+barplot(W[, 3], names.arg = rownames(Transpose_Matrix), main = "Source Contributions to Basis 3")
+```
+```{r}
+barplot(W[, 4], names.arg = rownames(Transpose_Matrix), main = "Source Contributions to Basis 4")
+```
+```{r}
+barplot(W[, 5], names.arg = rownames(Transpose_Matrix), main = "Source Contributions to Basis 5")
+```
+```{r}
+barplot(W[, 6], names.arg = rownames(Transpose_Matrix), main = "Source Contributions to Basis 6")
+```
+```{r}
+barplot(W[, 7], names.arg = rownames(Transpose_Matrix), main = "Source Contributions to Basis 7")
+```
+```{r}
+barplot(W[, 8], names.arg = rownames(Transpose_Matrix), main = "Source Contributions to Basis 8")
+```
+```{r}
+barplot(W[, 9], names.arg = rownames(Transpose_Matrix), main = "Source Contributions to Basis 9")
+```
+
