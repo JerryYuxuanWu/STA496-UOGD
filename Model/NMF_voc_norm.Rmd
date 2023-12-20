@@ -129,9 +129,9 @@ Normalized_VOCs <- sapply(Merged_VOCs, normalize_column)
 
 ### Combine and Transpose
 ```{r}
-# Transpose <- cbind(Normalized_Data, Normalized_VOCs) #combine the non-VOC and normalized VOC
+Transpose <- cbind(Normalized_Data, Normalized_VOCs) #important: using the normalized VOCs for this file
 
-Transpose <- cbind(Normalized_Data, Merged_VOCs) # IMPORTANT: using the un-normalized VOCs for this file
+# Transpose <- cbind(Normalized_Data, Merged_VOCs)
 # rownames(Transpose) <- as.character(Transpose[,1]) # I'm not able to run this line, but it shouldn't affect anything
 Transpose_Matrix <- t(as.matrix(Transpose))
 

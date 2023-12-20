@@ -72,8 +72,8 @@ df_trailer <- merge(df_trailer, df_nox, by = 'time_hourly', all = TRUE)
 df_trailer <- merge(df_trailer, df_o3, by = 'time_hourly', all = TRUE)
 df_trailer <- merge(df_trailer, df_met, by = 'time_hourly', all = TRUE)
 df_trailer <- merge(df_trailer, df_ch4, by = 'time_hourly', all = TRUE)
-# excluding h2s yet due to alternating NAs
-# df_trailer <- merge(df_trailer, df_h2s, by = 'time_hourly', all = TRUE)
+# excluding h2s yet due to alternating NAs, dec 2023 edit, including this for NMF
+df_trailer <- merge(df_trailer, df_h2s, by = 'time_hourly', all = TRUE)
 df_trailer <- merge(df_trailer, df_voc, by = 'time_hourly', all = TRUE)
 ```
 
