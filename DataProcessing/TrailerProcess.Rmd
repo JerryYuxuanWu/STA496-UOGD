@@ -23,58 +23,58 @@ library(mgcv)
 ### Reading the datasets
 ```{r}
 # current version q3
-data_list <- c("rd", "co", "nox", "o3", "met", "ch4", "h2s")
+base_dir <- "../data/trailer03292024/"
+folders <- list.dirs(base_dir)
 
-for (file_name in data_list) {
+for (folder in folders[-1]) {
     # Construct the file path
-    file_path_q2 <- paste0("../data/trailer0928/LNM_", file_name, "_2023_q2_v1.5.csv")
-    file_path_q3 <- paste0("../data/trailer0928/LNM_", file_name, "_2023_q3_v1.5.csv")
-    
-    # Read the CSV file and store it in a dataframe
-    assign(paste0("df_", file_name, "_q2"), read.csv(file_path_q2, skip=1, header=TRUE))
-    assign(paste0("df_", file_name, "_q3"), read.csv(file_path_q3, skip=1, header=TRUE))
+    file_dirs <- list.files(folder)
+    for (file in file_dirs) {
+      file_dir <- paste0(folder, '/', file)
+      assign(paste0(file), read.csv(file_dir, skip=1, header=TRUE))
+    }
 }
-
-df_voc_q2 <- read.csv("../data/trailer0928/LNM_voc_2023_q2_v3.3.csv", skip=1, header=TRUE)
-df_voc_q3 <- read.csv("../data/trailer0928/LNM_voc_2023_q3_v3.3.csv", skip=1, header=TRUE)
 ```
 ### Data processing
 ```{r}
-data_list2 <- c("rd", "co", "nox", "o3", "met", "ch4", "h2s", "voc")
+pol_cat_names <- c("bc", "rd", "co", "nox", "o3", "met", "ch4", "h2s", "voc")
+
 my_mean <- function(x){
   mean(x, na.rm=TRUE)
 }
 
-for (dataframe in data_list2){
-  df_q2 <- get(paste0("df_", dataframe, "_q2"))
-  df_q3 <- get(paste0("df_", dataframe, "_q3"))
+for (pol in pol_cat_names){
+  data_names <- objects(pattern = paste0('LNM_', pol))
   
-  assign(paste0("df_", dataframe), rbind(df_q2, df_q3))
+  data_full <- tibble()
+  for (data_name in data_names) {
+    data_full <- rbind(data_full, get(data_name))
+  }
   
   # Convert to standard time format
-  df_temporary <- get(paste0("df_", dataframe))
-  df_temporary$std_time <- as_datetime(df_temporary$time, tz = "MST")
+  data_full$std_time <- as_datetime(data_full$time, tz = "MST")
   
-  df_temporary$time_hourly <- substr(format(df_temporary$std_time, format = "%Y-%m-%d %H:%M:%S"), 1, 13)
+  data_full$time_hourly <- substr(format(data_full$std_time, format = "%Y-%m-%d %H:%M:%S"), 1, 13)
   exclude_vars <- c("std_time", "time")
-  df_temporary_clean <- df_temporary %>% group_by(time_hourly) %>% summarize(across(
+  df_temporary_clean <- data_full %>% group_by(time_hourly) %>% summarize(across(
       .cols = -all_of(exclude_vars),  # Exclude specified variables
       .fns = my_mean  # Apply the my_mean function with na.rm=TRUE
     ))
-  assign(paste0("df_", dataframe), df_temporary_clean, envir = .GlobalEnv)
+  assign(paste0("df_", pol), df_temporary_clean, envir = .GlobalEnv)
 }
 ```
 
 ### Data Merging
 ```{r}
-df_trailer <- merge(df_rd, df_co, by = 'time_hourly', all = TRUE)
-df_trailer <- merge(df_trailer, df_nox, by = 'time_hourly', all = TRUE)
-df_trailer <- merge(df_trailer, df_o3, by = 'time_hourly', all = TRUE)
-df_trailer <- merge(df_trailer, df_met, by = 'time_hourly', all = TRUE)
-df_trailer <- merge(df_trailer, df_ch4, by = 'time_hourly', all = TRUE)
-# excluding h2s yet due to alternating NAs, dec 2023 edit, including this for NMF
-df_trailer <- merge(df_trailer, df_h2s, by = 'time_hourly', all = TRUE)
-df_trailer <- merge(df_trailer, df_voc, by = 'time_hourly', all = TRUE)
+df_trailer <- df_rd %>%
+  full_join(df_co, by = 'time_hourly') %>%
+  full_join(df_bc, by = 'time_hourly') %>%
+  full_join(df_nox, by = 'time_hourly') %>%
+  full_join(df_o3, by = 'time_hourly') %>%
+  full_join(df_met, by = 'time_hourly') %>%
+  full_join(df_ch4, by = 'time_hourly') %>%
+  full_join(df_h2s, by = 'time_hourly') %>%
+  full_join(df_voc, by = 'time_hourly')
 ```
 
 ```{r}
@@ -94,6 +94,6 @@ summary(df_trailer)
 ```{r}
 # Saving
 saveRDS(df_trailer, file = "TrailerProcessed.rds")
+trailer_old <- readRDS("TrailerProcessed.rds")
 ```
-
 

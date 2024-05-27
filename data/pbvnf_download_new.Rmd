@@ -64,7 +64,7 @@ function (lon, lat, bearing, distance)
 ```
 
 ```{r}
-# Oct 23 update, modifying the boundary to take flaring measurements
+# Apr 23 update, modifying the boundary to take flaring measurements
 source <- c(32.2961, -104.1089)
 north_bound <- new.lon.lat(source[2], source[1], 0, 100)
 south_bound <- new.lon.lat(source[2], source[1], 180, 100)
@@ -73,8 +73,8 @@ east_bound <- new.lon.lat(source[2], source[1], 90, 100)
 ```
 
 ```{r}
-start_date <- as.Date('2023-03-01')
-end_date <- as.Date('2023-09-27')
+start_date <- as.Date('2022-08-31')
+end_date <- as.Date('2023-03-01')
 date_sequence <- seq(start_date, end_date, by = "day")
 
 vnf.cols = c('date_mscan', 'lon_gmtco', 'lat_gmtco', 'temp_bb', 'temp_bkg',
@@ -105,7 +105,7 @@ for (date in date_sequence){
   # create the url to request
   data_url <- paste0(vnfv30.url.pfx[1], year_month, vnfv30.url.pfx[2], date_string, vnfv30.url.pfx[3], sep = "")
   
-  gz.name = paste0('./pb_vnf/raw/', basename(data_url))
+  gz.name = paste0('pb_vnf/raw/', basename(data_url))
   csv.name = gsub(".gz", "", gz.name)
   
   download.file(data_url,gz.name,mode = "wb", quiet = TRUE, headers = list(Authorization = auth))
@@ -131,5 +131,23 @@ for (date in date_sequence){
 ```
 
 ```{r}
-saveRDS(vnf_pb_new, "./pb_vnf/pb-vnf_230301-0927-v3.rds")
+saveRDS(vnf_pb_new, "./pb_vnf/pb-vnf_220831-240301-v1.rds")
 ```
+
+```{r}
+vnf_pb_old <- readRDS('pb_vnf/pb-vnf.rds')
+vnf_pb_old <- vnf_pb_old %>%
+  filter(lon >= lon_lim[1], lon <= lon_lim[2],
+             lat >= lat_lim[1], lat <= lat_lim[2])
+vnf_pb_old <- vnf_pb_old %>%
+  select(-c(vnf_id, file_date))%>%
+  rename(datetime = date)
+vnf_pb_230301_0927 <- readRDS('pb_vnf/pb-vnf_230301-0927-v3.rds')
+pb_vnf_230928_240423 <- readRDS('pb_vnf/pb-vnf_230928-240423-v1.rds')
+
+pb_vnf_new <- rbind(vnf_pb_new, vnf_pb_230301_0927, pb_vnf_230928_240423)
+pb_vnf_new$datetime <- as.Date(pb_vnf_new$datetime)
+pb_vnf_2016_20240423 <- rbind(vnf_pb_old, pb_vnf_new)
+saveRDS(pb_vnf_2016_20240423, 'pb_vnf/pb-vnf-2012-20240423.rds')
+```
+

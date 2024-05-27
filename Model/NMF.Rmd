@@ -14,8 +14,13 @@ library(dplyr)
 ```{r}
 # read the radon data
 hourly_radon <- readRDS("hourly_radon.rds")
+hourly_radon_old <- readRDS("hourly_radon_old.rds")
 ```
 ```{r}
+# ignore bc and flag for o3 for now
+hourly_radon <- hourly_radon %>% select(-c(bc, flag, intensity_a, intensity_b, instr_temp_c, lamp_temp_c, flow_a, flow_b, pressure.x, pressure.y, mode, water_vapor_mr, T101_Mode)) %>%
+  relocate(pressure_altcorr, .after = temp_f)
+
 # remove NAs
 hourly_radon_nona <- hourly_radon %>% select(-c(distToLovi_wells, monthly_oil, monthly_gas)) %>% na.omit()
 
@@ -185,10 +190,12 @@ set.seed(123)
 ```{r}
 #function below used to estimate the optimal rank and will be used in the nmf() function. 
 # takes around 20-30 mins to run
-estimate_rank <- nmfEstimateRank(Transpose_Matrix, 4:20, method = "ls-nmf", weight = weight_matrix, 5)
+# estimate_rank <- nmfEstimateRank(Transpose_Matrix, 4:20, method = "ls-nmf", weight = weight_matrix, 5)
 # changing the range of rank to 2:20 from 4:20
 # nrun = 5
+# saveRDS(estimate_rank, 'estimate_rank.rds')
 
+estimate_rank <- readRDS('estimate_rank.rds')
 measures <- estimate_rank$measures
 fit <- estimate_rank$fit
 consensus <- estimate_rank$consensus

@@ -10,13 +10,14 @@ library(lubridate)
 ```
 ## Reading in data
 ```{r}
-weather <- read.csv("../data/Weather/StationData230414-0928.csv")
+weather <- read.csv("../data/Weather/StationData230414-0927.csv")
+weather2 <- read.csv("../data/Weather/StationData230928-240520.csv")
 ```
 ## Cleaning
 ```{r}
 # credit to Jerry Wu for some of the code here
-weather <- weather[-1, ] %>% select(-Station.5ZR.Carlsbad..)
-
+weather <- rbind(weather[-1, ] %>% select(-c(Station.5ZR.Carlsbad.., PM25)), 
+                 weather2[-1, ] %>% select(-c(Station.5ZR.Carlsbad.., PM2.5_Archive)))
 # Convert date column to date type
 weather$`Date Time` <- mdy_hm(weather$Date.Time, tz = 'MST')
 weather$`year` <- format(weather$`Date Time`, '%Y')

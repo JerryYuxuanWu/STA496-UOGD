@@ -10,7 +10,7 @@ library(tidyverse)
 
 ```{r}
 # Read all the related RDS first
-flaring <- readRDS('FlaringProcessed-v3.rds')
+flaring <- readRDS('FlaringProcessed-v4.rds')
 Trailer <- readRDS('TrailerProcessed.rds')
 Weather <- readRDS('WeatherProcessed.rds')
 Wells <- readRDS('WellsProcessed0301.rds')

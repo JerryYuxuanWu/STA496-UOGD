@@ -1,0 +1,510 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kml xmlns="http://www.opengis.net/kml/2.2" xmlns:gx="http://www.google.com/kml/ext/2.2" xmlns:kml="http://www.opengis.net/kml/2.2" xmlns:atom="http://www.w3.org/2005/Atom">
+<Document>
+	<name>Passive sampler network Permian 3.kmz</name>
+	<StyleMap id="m_ylw-pushpin12">
+		<Pair>
+			<key>normal</key>
+			<styleUrl>#s_ylw-pushpin10</styleUrl>
+		</Pair>
+		<Pair>
+			<key>highlight</key>
+			<styleUrl>#s_ylw-pushpin_hl1</styleUrl>
+		</Pair>
+	</StyleMap>
+	<StyleMap id="msn_F">
+		<Pair>
+			<key>normal</key>
+			<styleUrl>#sn_F</styleUrl>
+		</Pair>
+		<Pair>
+			<key>highlight</key>
+			<styleUrl>#sh_F</styleUrl>
+		</Pair>
+	</StyleMap>
+	<StyleMap id="msn_grn-pushpin">
+		<Pair>
+			<key>normal</key>
+			<styleUrl>#sn_grn-pushpin1</styleUrl>
+		</Pair>
+		<Pair>
+			<key>highlight</key>
+			<styleUrl>#sh_grn-pushpin1</styleUrl>
+		</Pair>
+	</StyleMap>
+	<StyleMap id="msn_grn-pushpin2">
+		<Pair>
+			<key>normal</key>
+			<styleUrl>#sn_grn-pushpin</styleUrl>
+		</Pair>
+		<Pair>
+			<key>highlight</key>
+			<styleUrl>#sh_grn-pushpin</styleUrl>
+		</Pair>
+	</StyleMap>
+	<StyleMap id="msn_grn-pushpin0">
+		<Pair>
+			<key>normal</key>
+			<styleUrl>#sn_grn-pushpin0</styleUrl>
+		</Pair>
+		<Pair>
+			<key>highlight</key>
+			<styleUrl>#sh_grn-pushpin0</styleUrl>
+		</Pair>
+	</StyleMap>
+	<StyleMap id="msn_grn-pushpin1">
+		<Pair>
+			<key>normal</key>
+			<styleUrl>#sn_grn-pushpin2</styleUrl>
+		</Pair>
+		<Pair>
+			<key>highlight</key>
+			<styleUrl>#sh_grn-pushpin2</styleUrl>
+		</Pair>
+	</StyleMap>
+	<StyleMap id="msn_pink-pushpin">
+		<Pair>
+			<key>normal</key>
+			<styleUrl>#sn_pink-pushpin</styleUrl>
+		</Pair>
+		<Pair>
+			<key>highlight</key>
+			<styleUrl>#sh_pink-pushpin</styleUrl>
+		</Pair>
+	</StyleMap>
+	<StyleMap id="msn_ylw-pushpin">
+		<Pair>
+			<key>normal</key>
+			<styleUrl>#sn_ylw-pushpin0</styleUrl>
+		</Pair>
+		<Pair>
+			<key>highlight</key>
+			<styleUrl>#sh_ylw-pushpin0</styleUrl>
+		</Pair>
+	</StyleMap>
+	<StyleMap id="msn_ylw-pushpin0">
+		<Pair>
+			<key>normal</key>
+			<styleUrl>#sn_ylw-pushpin</styleUrl>
+		</Pair>
+		<Pair>
+			<key>highlight</key>
+			<styleUrl>#sh_ylw-pushpin</styleUrl>
+		</Pair>
+	</StyleMap>
+	<Style id="s_ylw-pushpin10">
+		<IconStyle>
+			<scale>1.1</scale>
+			<Icon>
+				<href>http://maps.google.com/mapfiles/kml/pushpin/ylw-pushpin.png</href>
+			</Icon>
+			<hotSpot x="20" y="2" xunits="pixels" yunits="pixels"/>
+		</IconStyle>
+	</Style>
+	<Style id="s_ylw-pushpin_hl1">
+		<IconStyle>
+			<scale>1.3</scale>
+			<Icon>
+				<href>http://maps.google.com/mapfiles/kml/pushpin/ylw-pushpin.png</href>
+			</Icon>
+			<hotSpot x="20" y="2" xunits="pixels" yunits="pixels"/>
+		</IconStyle>
+	</Style>
+	<Style id="sh_F">
+		<IconStyle>
+			<scale>1.3</scale>
+			<Icon>
+				<href>http://maps.google.com/mapfiles/kml/paddle/F.png</href>
+			</Icon>
+			<hotSpot x="32" y="1" xunits="pixels" yunits="pixels"/>
+		</IconStyle>
+		<ListStyle>
+			<ItemIcon>
+				<href>http://maps.google.com/mapfiles/kml/paddle/F-lv.png</href>
+			</ItemIcon>
+		</ListStyle>
+	</Style>
+	<Style id="sh_grn-pushpin">
+		<IconStyle>
+			<scale>1.3</scale>
+			<Icon>
+				<href>http://maps.google.com/mapfiles/kml/pushpin/grn-pushpin.png</href>
+			</Icon>
+			<hotSpot x="20" y="2" xunits="pixels" yunits="pixels"/>
+		</IconStyle>
+		<BalloonStyle>
+		</BalloonStyle>
+		<ListStyle>
+		</ListStyle>
+	</Style>
+	<Style id="sh_grn-pushpin2">
+		<IconStyle>
+			<scale>1.3</scale>
+			<Icon>
+				<href>http://maps.google.com/mapfiles/kml/pushpin/grn-pushpin.png</href>
+			</Icon>
+			<hotSpot x="20" y="2" xunits="pixels" yunits="pixels"/>
+		</IconStyle>
+	</Style>
+	<Style id="sh_grn-pushpin0">
+		<IconStyle>
+			<scale>1.3</scale>
+			<Icon>
+				<href>http://maps.google.com/mapfiles/kml/pushpin/grn-pushpin.png</href>
+			</Icon>
+			<hotSpot x="20" y="2" xunits="pixels" yunits="pixels"/>
+		</IconStyle>
+	</Style>
+	<Style id="sh_grn-pushpin1">
+		<IconStyle>
+			<scale>1.3</scale>
+			<Icon>
+				<href>http://maps.google.com/mapfiles/kml/pushpin/grn-pushpin.png</href>
+			</Icon>
+			<hotSpot x="20" y="2" xunits="pixels" yunits="pixels"/>
+		</IconStyle>
+	</Style>
+	<Style id="sh_pink-pushpin">
+		<IconStyle>
+			<scale>1.3</scale>
+			<Icon>
+				<href>http://maps.google.com/mapfiles/kml/pushpin/pink-pushpin.png</href>
+			</Icon>
+			<hotSpot x="20" y="2" xunits="pixels" yunits="pixels"/>
+		</IconStyle>
+	</Style>
+	<Style id="sh_ylw-pushpin">
+		<IconStyle>
+			<scale>1.3</scale>
+			<Icon>
+				<href>http://maps.google.com/mapfiles/kml/pushpin/ylw-pushpin.png</href>
+			</Icon>
+			<hotSpot x="20" y="2" xunits="pixels" yunits="pixels"/>
+		</IconStyle>
+	</Style>
+	<Style id="sh_ylw-pushpin0">
+		<IconStyle>
+			<scale>1.3</scale>
+			<Icon>
+				<href>http://maps.google.com/mapfiles/kml/pushpin/pink-pushpin.png</href>
+			</Icon>
+			<hotSpot x="20" y="2" xunits="pixels" yunits="pixels"/>
+		</IconStyle>
+	</Style>
+	<Style id="sn_F">
+		<IconStyle>
+			<scale>1.1</scale>
+			<Icon>
+				<href>http://maps.google.com/mapfiles/kml/paddle/F.png</href>
+			</Icon>
+			<hotSpot x="32" y="1" xunits="pixels" yunits="pixels"/>
+		</IconStyle>
+		<ListStyle>
+			<ItemIcon>
+				<href>http://maps.google.com/mapfiles/kml/paddle/F-lv.png</href>
+			</ItemIcon>
+		</ListStyle>
+	</Style>
+	<Style id="sn_grn-pushpin">
+		<IconStyle>
+			<scale>1.1</scale>
+			<Icon>
+				<href>http://maps.google.com/mapfiles/kml/pushpin/grn-pushpin.png</href>
+			</Icon>
+			<hotSpot x="20" y="2" xunits="pixels" yunits="pixels"/>
+		</IconStyle>
+		<BalloonStyle>
+		</BalloonStyle>
+		<ListStyle>
+		</ListStyle>
+	</Style>
+	<Style id="sn_grn-pushpin2">
+		<IconStyle>
+			<scale>1.1</scale>
+			<Icon>
+				<href>http://maps.google.com/mapfiles/kml/pushpin/grn-pushpin.png</href>
+			</Icon>
+			<hotSpot x="20" y="2" xunits="pixels" yunits="pixels"/>
+		</IconStyle>
+	</Style>
+	<Style id="sn_grn-pushpin0">
+		<IconStyle>
+			<scale>1.1</scale>
+			<Icon>
+				<href>http://maps.google.com/mapfiles/kml/pushpin/grn-pushpin.png</href>
+			</Icon>
+			<hotSpot x="20" y="2" xunits="pixels" yunits="pixels"/>
+		</IconStyle>
+	</Style>
+	<Style id="sn_grn-pushpin1">
+		<IconStyle>
+			<scale>1.1</scale>
+			<Icon>
+				<href>http://maps.google.com/mapfiles/kml/pushpin/grn-pushpin.png</href>
+			</Icon>
+			<hotSpot x="20" y="2" xunits="pixels" yunits="pixels"/>
+		</IconStyle>
+	</Style>
+	<Style id="sn_pink-pushpin">
+		<IconStyle>
+			<scale>1.1</scale>
+			<Icon>
+				<href>http://maps.google.com/mapfiles/kml/pushpin/pink-pushpin.png</href>
+			</Icon>
+			<hotSpot x="20" y="2" xunits="pixels" yunits="pixels"/>
+		</IconStyle>
+	</Style>
+	<Style id="sn_ylw-pushpin">
+		<IconStyle>
+			<scale>1.1</scale>
+			<Icon>
+				<href>http://maps.google.com/mapfiles/kml/pushpin/ylw-pushpin.png</href>
+			</Icon>
+			<hotSpot x="20" y="2" xunits="pixels" yunits="pixels"/>
+		</IconStyle>
+	</Style>
+	<Style id="sn_ylw-pushpin0">
+		<IconStyle>
+			<scale>1.1</scale>
+			<Icon>
+				<href>http://maps.google.com/mapfiles/kml/pushpin/pink-pushpin.png</href>
+			</Icon>
+			<hotSpot x="20" y="2" xunits="pixels" yunits="pixels"/>
+		</IconStyle>
+	</Style>
+	<Folder>
+		<name>Passive sampler network Permian 2</name>
+		<open>1</open>
+		<Placemark>
+			<name>HAY</name>
+			<description>installed on 16 June 2023</description>
+			<LookAt>
+				<longitude>-104.2469898227328</longitude>
+				<latitude>32.44118618443373</latitude>
+				<altitude>0</altitude>
+				<heading>-5.105587738584905</heading>
+				<tilt>29.9831265058802</tilt>
+				<range>274.1764049669205</range>
+				<gx:altitudeMode>relativeToSeaFloor</gx:altitudeMode>
+			</LookAt>
+			<styleUrl>#msn_grn-pushpin0</styleUrl>
+			<Point>
+				<gx:drawOrder>1</gx:drawOrder>
+				<coordinates>-104.2467570531803,32.44086442161841,0</coordinates>
+			</Point>
+		</Placemark>
+		<Placemark>
+			<name>CON</name>
+			<description>installed on 16 June 2023</description>
+			<LookAt>
+				<longitude>-104.1096437419366</longitude>
+				<latitude>32.29808891737928</latitude>
+				<altitude>0</altitude>
+				<heading>-3.506037413622823</heading>
+				<tilt>30.00131780973377</tilt>
+				<range>293.6404167454374</range>
+				<gx:altitudeMode>relativeToSeaFloor</gx:altitudeMode>
+			</LookAt>
+			<styleUrl>#msn_grn-pushpin0</styleUrl>
+			<Point>
+				<gx:drawOrder>1</gx:drawOrder>
+				<coordinates>-104.1096142325715,32.29777494127803,0</coordinates>
+			</Point>
+		</Placemark>
+		<Placemark>
+			<name>JOZ</name>
+			<description>installed on 16 June 2023</description>
+			<LookAt>
+				<longitude>-104.135387124097</longitude>
+				<latitude>32.34080376738022</latitude>
+				<altitude>0</altitude>
+				<heading>-3.496548866449094</heading>
+				<tilt>23.69633655373439</tilt>
+				<range>170.2499239126564</range>
+				<gx:altitudeMode>relativeToSeaFloor</gx:altitudeMode>
+			</LookAt>
+			<styleUrl>#msn_grn-pushpin</styleUrl>
+			<Point>
+				<gx:drawOrder>1</gx:drawOrder>
+				<coordinates>-104.1350808503178,32.34111751558185,0</coordinates>
+			</Point>
+		</Placemark>
+		<Placemark>
+			<name>possible site Loving, school</name>
+			<LookAt>
+				<longitude>-104.0950491553973</longitude>
+				<latitude>32.2803504735374</latitude>
+				<altitude>0</altitude>
+				<heading>0.06550745621574622</heading>
+				<tilt>24.01272085888456</tilt>
+				<range>1666.130702192949</range>
+				<gx:altitudeMode>relativeToSeaFloor</gx:altitudeMode>
+			</LookAt>
+			<styleUrl>#m_ylw-pushpin12</styleUrl>
+			<Point>
+				<gx:drawOrder>1</gx:drawOrder>
+				<coordinates>-104.0963509652871,32.27785258281607,0</coordinates>
+			</Point>
+		</Placemark>
+		<Placemark>
+			<name>possible new site, JJC</name>
+			<LookAt>
+				<longitude>-104.203905631798</longitude>
+				<latitude>32.37433919002881</latitude>
+				<altitude>0</altitude>
+				<heading>-0.02786599410520759</heading>
+				<tilt>31.9964170742074</tilt>
+				<range>470.4882862109503</range>
+				<gx:altitudeMode>relativeToSeaFloor</gx:altitudeMode>
+			</LookAt>
+			<styleUrl>#msn_grn-pushpin2</styleUrl>
+			<Point>
+				<gx:drawOrder>1</gx:drawOrder>
+				<coordinates>-104.204558213836,32.37430796958195,0</coordinates>
+			</Point>
+		</Placemark>
+		<Placemark>
+			<name>possible new site at Malaga, church</name>
+			<LookAt>
+				<longitude>-104.068088966452</longitude>
+				<latitude>32.2247326387836</latitude>
+				<altitude>0</altitude>
+				<heading>0.0134618740754412</heading>
+				<tilt>20.23707750539161</tilt>
+				<range>372.13749732466</range>
+				<gx:altitudeMode>relativeToSeaFloor</gx:altitudeMode>
+			</LookAt>
+			<styleUrl>#m_ylw-pushpin12</styleUrl>
+			<Point>
+				<gx:drawOrder>1</gx:drawOrder>
+				<coordinates>-104.0678711769491,32.22485331796428,0</coordinates>
+			</Point>
+		</Placemark>
+		<Placemark>
+			<name>TAY</name>
+			<description>installed on 16 June 2023</description>
+			<LookAt>
+				<longitude>-104.2382548818338</longitude>
+				<latitude>32.31822528552465</latitude>
+				<altitude>0</altitude>
+				<heading>-1.684313496832749</heading>
+				<tilt>30.00049694173724</tilt>
+				<range>110.5719955902514</range>
+				<gx:altitudeMode>relativeToSeaFloor</gx:altitudeMode>
+			</LookAt>
+			<styleUrl>#msn_grn-pushpin0</styleUrl>
+			<Point>
+				<gx:drawOrder>1</gx:drawOrder>
+				<coordinates>-104.2385056224504,32.31805305688815,0</coordinates>
+			</Point>
+		</Placemark>
+		<Placemark>
+			<name>possible new site, PRD</name>
+			<open>1</open>
+			<LookAt>
+				<longitude>-104.2122796001394</longitude>
+				<latitude>32.32277738938207</latitude>
+				<altitude>0</altitude>
+				<heading>-0.02511692871230969</heading>
+				<tilt>30.00249885458715</tilt>
+				<range>556.3395229691505</range>
+				<gx:altitudeMode>relativeToSeaFloor</gx:altitudeMode>
+			</LookAt>
+			<styleUrl>#msn_grn-pushpin2</styleUrl>
+			<Point>
+				<gx:drawOrder>1</gx:drawOrder>
+				<coordinates>-104.2124582471199,32.32357235636672,0</coordinates>
+			</Point>
+		</Placemark>
+		<Placemark>
+			<name>mobile home location</name>
+			<LookAt>
+				<longitude>-104.0571960144892</longitude>
+				<latitude>32.28376018420258</latitude>
+				<altitude>0</altitude>
+				<heading>-2.733714411721509</heading>
+				<tilt>26.34698689603943</tilt>
+				<range>699.7870736183138</range>
+				<gx:altitudeMode>relativeToSeaFloor</gx:altitudeMode>
+			</LookAt>
+			<styleUrl>#msn_ylw-pushpin0</styleUrl>
+			<Point>
+				<gx:drawOrder>1</gx:drawOrder>
+				<coordinates>-104.0575157613992,32.2834056669999,0</coordinates>
+			</Point>
+		</Placemark>
+		<Placemark>
+			<name>CAR</name>
+			<open>1</open>
+			<description>installed on 16 June 2023</description>
+			<LookAt>
+				<longitude>-104.1292930339001</longitude>
+				<latitude>32.31277871195296</latitude>
+				<altitude>0</altitude>
+				<heading>-5.048196639770855</heading>
+				<tilt>29.739867340453</tilt>
+				<range>219.8339823610168</range>
+				<gx:altitudeMode>relativeToSeaFloor</gx:altitudeMode>
+			</LookAt>
+			<styleUrl>#msn_grn-pushpin1</styleUrl>
+			<Point>
+				<gx:drawOrder>1</gx:drawOrder>
+				<coordinates>-104.1293932180542,32.31243657743887,0</coordinates>
+			</Point>
+		</Placemark>
+		<Placemark>
+			<name>possible location/vicinity (Wiedenmann home)</name>
+			<open>1</open>
+			<LookAt>
+				<longitude>-104.2338797566327</longitude>
+				<latitude>32.45695274408573</latitude>
+				<altitude>0</altitude>
+				<heading>-4.792369360033288</heading>
+				<tilt>7.4319536337715</tilt>
+				<range>3969.640805556669</range>
+				<gx:altitudeMode>relativeToSeaFloor</gx:altitudeMode>
+			</LookAt>
+			<styleUrl>#msn_ylw-pushpin</styleUrl>
+			<Point>
+				<gx:drawOrder>1</gx:drawOrder>
+				<coordinates>-104.2249214069626,32.4570166137969,0</coordinates>
+			</Point>
+		</Placemark>
+		<Placemark>
+			<name>generally desired vicinity #2</name>
+			<open>1</open>
+			<LookAt>
+				<longitude>-104.1582671905522</longitude>
+				<latitude>32.36537000206406</latitude>
+				<altitude>0</altitude>
+				<heading>-5.066708274322902</heading>
+				<tilt>0</tilt>
+				<range>30742.79274698791</range>
+				<gx:altitudeMode>relativeToSeaFloor</gx:altitudeMode>
+			</LookAt>
+			<styleUrl>#msn_pink-pushpin</styleUrl>
+			<Point>
+				<gx:drawOrder>1</gx:drawOrder>
+				<coordinates>-104.2037142219525,32.39795292023571,0</coordinates>
+			</Point>
+		</Placemark>
+		<Placemark>
+			<name>large double flare</name>
+			<LookAt>
+				<longitude>-104.2035426790593</longitude>
+				<latitude>32.42267009717696</latitude>
+				<altitude>0</altitude>
+				<heading>-5.083860063481788</heading>
+				<tilt>30.00174689801301</tilt>
+				<range>388.9357197826379</range>
+				<gx:altitudeMode>relativeToSeaFloor</gx:altitudeMode>
+			</LookAt>
+			<styleUrl>#msn_F</styleUrl>
+			<Point>
+				<gx:drawOrder>1</gx:drawOrder>
+				<coordinates>-104.2035426790593,32.42267009717695,0</coordinates>
+			</Point>
+		</Placemark>
+	</Folder>
+</Document>
+</kml>

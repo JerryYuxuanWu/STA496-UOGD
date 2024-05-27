@@ -6,6 +6,8 @@ output: html_document
 ---
 ```{r}
 library(geosphere)
+library(sf)
+library(tools)
 library(tidyverse)
 ```
 
@@ -15,19 +17,18 @@ wells_clean <- readRDS("../data/wells/cleaned_wells_cb.rds")
 wells_prod <- readRDS("../data/wells/cb_wells_prod.rds")
 ```
 
+```{r}
+# Location of trailer
+# kmz <- file_path_as_absolute("../data/Passive sampler network Permian 3.kmz")
+# 
+# kmz <- st_read(unzip(kmz))
+```
+
 ## Cleaning and Processing
 Want to obtain monthly oil and gas production of all wells/prod within 10km of lovings site
 ```{r}
 # filter distance
-# lon, lat of Loving monitor:  (-104.1089, 32.2961)
-loving_lonlat <- c(-104.1089, 32.2961)
-distance_km_lov <- function(long, lati){
-  start <- c(long, lati)
-  distGeo(start, loving_lonlat) / 1000
-}
-
-# 32.297345,-104.109386
-loving_lonlat2 <- c(-104.1089, 32.2961)
+loving_lonlat <- c(-104.1096 , 32.297770)
 distance_km_lov <- function(long, lati){
   start <- c(long, lati)
   distGeo(start, loving_lonlat) / 1000
