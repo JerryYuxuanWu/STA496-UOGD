@@ -7,7 +7,8 @@ output: html_document
 ```{r}
 # load the packages
 library(NMF)
-library(dplyr)
+library(tidyverse)
+library(gridExtra)
 ```
 
 ## Reading the data
@@ -18,7 +19,8 @@ hourly_radon_old <- readRDS("hourly_radon_old.rds")
 ```
 ```{r}
 # ignore bc and flag for o3 for now
-hourly_radon <- hourly_radon %>% select(-c(bc, flag, intensity_a, intensity_b, instr_temp_c, lamp_temp_c, flow_a, flow_b, pressure.x, pressure.y, mode, water_vapor_mr, T101_Mode)) %>%
+hourly_radon <- hourly_radon %>% 
+  select(-c(bc, flag, intensity_a, intensity_b, instr_temp_c, lamp_temp_c, flow_a, flow_b, pressure.x, pressure.y, mode, water_vapor_mr, T101_Mode)) %>%
   relocate(pressure_altcorr, .after = temp_f)
 
 # remove NAs
@@ -35,6 +37,7 @@ hourly_non_vocs <- hourly_radon_nona %>% select(c(co2_ppm, nox, o3, h2s, so2, ch
 # find the min for background-levels
 background_levels <- sapply(hourly_vocs, min)
 ```
+
 ```{r}
 background_levels
 ```
@@ -182,12 +185,11 @@ for (i in 1:n_rows) {
 }
 ```
 
+
+
 ```{r}
 # set a seed for nmf
 set.seed(123)
-```
-
-```{r}
 #function below used to estimate the optimal rank and will be used in the nmf() function. 
 # takes around 20-30 mins to run
 # estimate_rank <- nmfEstimateRank(Transpose_Matrix, 4:20, method = "ls-nmf", weight = weight_matrix, 5)
@@ -240,6 +242,168 @@ barplot(W[, 7], names.arg = rownames(Transpose_Matrix), main = "Source Contribut
 ```
 ```{r}
 barplot(W[, 8], names.arg = rownames(Transpose_Matrix), main = "Source Contributions to Basis 8", las=2)
+```
+
+# NMF - Eva 
+```{r}
+# Try Eva's approach
+components <- 4:20
+errors <- numeric(length(components) - 4)
+
+# Loop over the number of components
+# for (n in components) {
+#   nmf_result <- nmf(t(Transpose_Matrix), rank = n, method = "KL", seed='nndsvd')
+#   reconstruction <- basis(nmf_result)%*% coef(nmf_result)
+#   error <- norm(t(Transpose_Matrix) - reconstruction, type = "F")
+#   errors[n-3] <- error
+#   print(paste0('Completed ', n - 3, ' out of 16'))
+# }
+# 
+# saveRDS(errors, 'errors.rds')
+
+errors <- readRDS('errors.rds')
+```
+
+
+```{r, eval=TRUE, echo = F}
+# Plot the errors
+df <- data.frame(components, errors)
+ggplot(df, aes(x = components, y = errors)) +
+  geom_line() +
+  geom_point() +
+  theme_minimal() +
+  geom_text(aes(label = sprintf("%.3f", errors)), color = "blue", size = 3, vjust = -0.5) +
+  labs(title = "NMF Reconstruction Error vs. Number of Components",
+       x = "Number of Components", y = "Reconstruction Error")
+```
+
+
+```{r, eval=TRUE, echo = F}
+rankerror6 <-  df[3,2]
+rankerror6
+```
+
+```{r, eval=TRUE, echo = F}
+# Apply NMF
+nmf_result <- nmf(t(Transpose_Matrix), rank = 6, method = "KL", seed='nndsvd')
+
+# Examine the basis matrix (W)
+basis_matrix <- basis(nmf_result)
+# print(Inyodata_basis_matrix)
+
+# Examine the coefficient matrix (H)
+coef_matrix <- coef(nmf_result)
+
+# Optionally, visualize the results
+par(mfrow = c(1, 2))
+# Basis matrix
+image(basis_matrix, main = "Basis Matrix (W)")
+# Coefficient matrix
+image(coef_matrix, main = "Coefficient Matrix (H)")
+
+```
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+# Convert H to a data frame for ggplot
+H_df <- as.data.frame(coef_matrix)
+# Add a column for chemicals
+H_df$Chemical <- rownames(H_df)
+
+# Reshape data to long format
+H_long <- pivot_longer(H_df, cols = -Chemical, names_to = "Component", values_to = "Contribution")
+
+NFM1 <- subset(H_long, Chemical == '1')
+# Plot
+nfmplt_1 <- ggplot(NFM1, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "orange") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 4, nudge_y = 0.1) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components1")+
+  theme(
+  text = element_text(size = 14), # Base text size for all text elements
+  axis.title = element_text(size = 16), # Size of axis titles
+  axis.text = element_text(size = 12), # Size of axis text (tick labels)
+  plot.title = element_text(size = 18) # Size of the plot title
+)
+nfmplt_1
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+NFM2 <- subset(H_long, Chemical == '2')
+# Plot
+nfmplt_2 <- ggplot(NFM2, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill ="orange") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 4, nudge_y = 0.1) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components2")+
+  theme(
+  text = element_text(size = 14), # Base text size for all text elements
+  axis.title = element_text(size = 16), # Size of axis titles
+  axis.text = element_text(size = 12), # Size of axis text (tick labels)
+  plot.title = element_text(size = 18) # Size of the plot title
+)
+
+NFM3 <- subset(H_long, Chemical == '3')
+# Plot
+nfmplt_3 <- ggplot(NFM3, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "orange") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 4, nudge_y = 0.1) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components3")+
+  theme(
+  text = element_text(size = 14), # Base text size for all text elements
+  axis.title = element_text(size = 16), # Size of axis titles
+  axis.text = element_text(size = 12), # Size of axis text (tick labels)
+  plot.title = element_text(size = 18) # Size of the plot title
+)
+
+NFM4 <- subset(H_long, Chemical == '4')
+# Plot
+nfmplt_4 <- ggplot(NFM4, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "orange") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 4, nudge_y = 0.1) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components4")+
+  theme(
+  text = element_text(size = 14), # Base text size for all text elements
+  axis.title = element_text(size = 16), # Size of axis titles
+  axis.text = element_text(size = 12), # Size of axis text (tick labels)
+  plot.title = element_text(size = 18) # Size of the plot title
+)
+
+NFM5 <- subset(H_long, Chemical == '5')
+# Plot
+nfmplt_5 <- ggplot(NFM5, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "orange") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 4, nudge_y = 0.1) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components5")+
+  theme(
+  text = element_text(size = 14), # Base text size for all text elements
+  axis.title = element_text(size = 16), # Size of axis titles
+  axis.text = element_text(size = 12), # Size of axis text (tick labels)
+  plot.title = element_text(size = 18) # Size of the plot title
+)
+
+NFM6 <- subset(H_long, Chemical == '6')
+# Plot
+nfmplt_6 <- ggplot(NFM6, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "orange") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 4, nudge_y = 0.1) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components6")+
+  theme(
+  text = element_text(size = 14), # Base text size for all text elements
+  axis.title = element_text(size = 16), # Size of axis titles
+  axis.text = element_text(size = 12), # Size of axis text (tick labels)
+  plot.title = element_text(size = 18) # Size of the plot title
+)
+
+```
+
+```{r, eval=TRUE, echo = FALSE, fig.height=15, fig.width=20}
+grid.arrange(nfmplt_1, nfmplt_2, nfmplt_3, nfmplt_4, nfmplt_5,  nfmplt_6, ncol=2)
 ```
 
 

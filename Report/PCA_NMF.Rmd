@@ -1,0 +1,3269 @@
+---
+title: "PCA NMF Report for Chemicals"
+author: "Zichun Xu"
+date: "2024/03/08"
+output:
+  html_document:
+    theme: flatly
+    toc: yes
+    toc_float:
+      collapsed: true
+---
+
+```{r setup, include=FALSE}
+#install.packages('tidyverse')
+library(tidyverse)
+library(knitr) ## To create nice tables
+library(broom) ## Needed to make the regression output 'tidy'
+library(ggplot2)
+library(ggrepel)
+library(dplyr)
+library(Matrix)
+library(MPV)
+library(car)
+library(glmnet)
+library(rms)
+library(MASS)
+library(gglasso)
+library(pls)
+library(psych)
+library(sf)
+library(leaflet)
+library(htmlwidgets)
+library(lubridate)
+library(gridExtra)
+library(psych)
+library(corrplot)
+library(reshape2)
+library(mice)
+library(caret)
+library(reshape2)
+library(readr)
+library(stats)
+library(patchwork)
+library(gridExtra)
+library(factoextra)
+```
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+# load file and csv
+aqs_csn <- read.csv("Merged_AQS_CSN_2000_2023_CMAQ_POC_count.csv", header=T)
+```
+
+
+
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+number_of_unique_values <- length(unique(aqs_csn$Site.Code))
+number_of_unique_values
+
+```
+
+### add two more columns: smoke_score and smoke_idicator
+```{r, eval=TRUE, echo = T, include=FALSE}
+aqs_csn <- aqs_csn %>%
+  mutate(smoke_score = light * 1 + med * 2 + heavy * 3)
+
+aqs_csn$smoke_indicator <- ifelse(aqs_csn$smoke_score > 0, 1, 0)
+
+# Viewing the updated data frame
+head(aqs_csn)
+```
+
+
+
+## site map before cleaning with na
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+site_counts_bf <- aqs_csn %>%
+  group_by(Site.Code) %>%
+  summarise(Count = n(), 
+            Latitude = first(Latitude), 
+            Longitude = first(Longitude),
+            City = first(City),
+            State = first(State),
+            County = first(County))
+```
+
+
+
+```{r, eval=TRUE, echo = F}
+# Create an interactive map of AQS data sites
+sites.map.bf <- leaflet(data = site_counts_bf) %>%
+  addTiles() %>%
+  addCircleMarkers(data = site_counts_bf, lng = ~Longitude, lat = ~Latitude, color = "red", opacity = 1) %>%
+  addCircleMarkers(~Longitude, ~Latitude, color="blue", opacity = 0.5,
+                   radius = 2, popup = paste("State:", site_counts_bf$State, "<br>",
+                                             "County:", site_counts_bf$County, "<br>",
+                                             "City:", site_counts_bf$City, "<br>",
+                                             "Site Code:", site_counts_bf$Site.Code, "<br>",
+                                             "Counts:", site_counts_bf$Count))
+
+saveWidget(sites.map.bf, file="/Users/xuzichun/Desktop/merged/Sites-Map-before.html")
+sites.map.bf
+```
+
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+# before we filter out all the NA numbers
+Rubidoux <- aqs_csn %>% filter(Site.Code == "06-065-8001")
+nrow(Rubidoux)
+# 8403
+```
+
+# Clean the data
+### filter out all missing data if all chemicals are NA
+```{r, eval=TRUE, echo = T, include=FALSE}
+# filter out all missing data if all chemicals are NA
+filtered_data <- aqs_csn[rowSums(is.na(aqs_csn[, 11:52])) < 42, ]
+head(filtered_data)
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+# we filter out the missing data in chemical
+Rubidoux <- filtered_data %>% filter(Site.Code == "06-065-8001")
+nrow(Rubidoux)
+```
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+nrow(Rubidoux)
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+head(filtered_data)
+```
+
+## filling zeros to all missing smoke value
+```{r, eval=TRUE, echo = T, include=FALSE}
+# filling zeros to all missing smoke
+filtered_data$smoke_score[is.na(filtered_data$smoke_score)] <- 0
+filtered_data$smoke_indicator[is.na(filtered_data$smoke_indicator)] <- 0
+tail(filtered_data)
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+head(filtered_data)
+```
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+
+chemicals_name_all <- names(filtered_data[, 11:52])
+
+# Combining the columns
+all_relevant_columns <- c(chemicals_name_all)
+
+# Exploratory Data Analysis (EDA) - Summary statistics for the relevant columns
+eda_summary <- summary(filtered_data[, all_relevant_columns])
+
+# Checking for missing values
+missing_values <- colSums(is.na(filtered_data[, all_relevant_columns]))
+
+# Displaying the results
+list(eda_summary, missing_values)
+```
+## Get the percentage of missing values for each chemicals
+```{r, eval=TRUE, echo = F}
+# Calculate the percentage of missing values for each column
+missing_percentage <- (missing_values / nrow(filtered_data)) * 100
+
+# Sort the percentages in descending order
+sorted_missing_percentage <- sort(missing_percentage, decreasing = TRUE)
+
+# Display the sorted percentages
+sorted_missing_percentage
+```
+## The percentage of missing values in the dataset varies significantly across columns. Some columns, like 'Hg' and 'EC_unadjusted', have extremely high percentages of missing data (above 13%). For such columns, deletion might be the best approach since imputation could introduce substantial bias.
+### Delete columns with more than 13% missing data
+```{r, eval=TRUE, echo = T, include=FALSE}
+# Delete columns with more than 13% missing data
+columns_to_drop <- names(which(missing_percentage > 13))
+data_cleaned <- filtered_data[, !(names(filtered_data) %in% columns_to_drop)]
+head(data_cleaned)
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+number_of_unique_values <- length(unique(data_cleaned$Site.Code))
+number_of_unique_values
+
+```
+
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+nrow(data_cleaned)
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+names(data_cleaned)
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+chemicals_name <- setdiff(chemicals_name_all, columns_to_drop)
+smoke_density <- "smoke_score"
+chemicals_name
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+table(data_cleaned$Site.Code)
+nrow(data_cleaned)
+```
+
+## now we will drop the row if the row contain any chemical that is missing.
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+# filter out all missing data if any chemicals are NA
+data_update <- data_cleaned
+data_update <- data_update[rowSums(is.na(data_update[, 11:37])) == 0, ]
+nrow(data_update)
+head(data_update)
+```
+
+### data_update will not contain any missing chemical value.
+```{r, eval=TRUE, echo = T, include=FALSE}
+table(data_update$Site.Code)
+summary(data_update)
+```
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+names(data_update)
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+listname <- c("PM25", names(data_update[, 11:36]))
+```
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+summary(data_update[listname])
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+# Create a box plot for PM25 concentrations in each POC
+ggplot(data_update, aes(x = factor(POC), y = PM25)) +
+  geom_boxplot() +
+  ggtitle('PM2.5 for Each Parameter Occurrence Code (POC)') +
+  xlab('Parameter Occurrence Code (POC)') +
+  ylab('PM2.5 Micrograms/cubic meter (LC)') +
+  theme_minimal()
+```
+
+
+## get the map after cleanning data
+```{r}
+summary(data_update)
+```
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+site_counts_with_smoke <- data_update %>%
+  group_by(Site.Code) %>%
+  summarise(Count = n(), 
+            Latitude = first(Latitude), 
+            Longitude = first(Longitude),
+            City = first(City),
+            State = first(State),
+            County = first(County),
+            average_pm25 = max(PM25))
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+county_summary <- site_counts_with_smoke %>%
+  group_by(State, County) %>%
+  summarise(Count = sum(Count), .groups = 'drop') %>%
+  arrange(State, County) # Arrange by state and then by county
+
+# Now, set the factor levels for county based on this ordering
+county_summary$County <- factor(county_summary$County, levels = unique(county_summary$County))
+
+# Plot
+ggplot(county_summary, aes(x = County, y = Count, fill = State)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  theme_minimal() +
+  labs(title = "number of data points by County and State", x = "County", y = "Count") +
+  scale_fill_brewer(palette = "Paired") # Use a color pale
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+county_summary
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+county_summary <- site_counts_with_smoke %>%
+  group_by(State, County, City) %>%
+  summarise(Total = sum(Count), .groups = 'drop') %>%
+  arrange(State, County) # Arrange by state and then by county
+
+# Now, set the factor levels for county based on this ordering
+county_summary$County <- factor(county_summary$County, levels = unique(county_summary$County))
+
+# Plot
+ggplot(county_summary, aes(x = County, y = Total, fill = State)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  # geom_text(aes(label = paste(County, City, sep=": ")), vjust = -0.3, color = "black") +
+  theme_minimal() +
+  labs(title = "number of data points by Site.Code and State", x = "Site.Code", y = "Count") +
+  scale_fill_brewer(palette = "Paired") # Use a color pale
+```
+
+
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+smokeday <- data_update %>% filter(smoke_indicator == 1) %>%
+  group_by(Site.Code) %>%
+  summarise(Count = n(), 
+            City = first(City),
+            State = first(State),
+            County = first(County))
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+merged_df <- merge(county_summary, smokeday)
+merged_df
+```
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+county_summary <- smokeday %>%
+  group_by(State, County, City) %>%
+  summarise(Total = sum(Count), .groups = 'drop') %>%
+  arrange(State, County) # Arrange by state and then by county
+
+# Now, set the factor levels for county based on this ordering
+county_summary$County <- factor(county_summary$County, levels = unique(county_summary$County))
+
+# Plot
+ggplot(county_summary, aes(x = County, y = Total, fill = State)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  # geom_text(aes(label = paste(County, City, sep=": ")), vjust = -0.3, color = "black") +
+  theme_minimal() +
+  labs(title = "Number of Smoke Days Data Points by Conty and State", x = "Conty", y = "Number of Data Points") +
+  scale_fill_brewer(palette = "Paired") + # Use a color pale
+    geom_text(aes(label = sprintf("%.0f", Total)), color = "red", size = 8, position = position_nudge( y = 4))+
+  theme(
+  text = element_text(size = 14), # Base text size for all text elements
+  axis.title = element_text(size = 16), # Size of axis titles
+  axis.text = element_text(size = 12), # Size of axis text (tick labels)
+  plot.title = element_text(size = 18) # Size of the plot title
+)
+```
+
+
+
+
+
+
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+#install.packages("usmap")
+library(usmap) #import the package
+library(ggplot2) #use ggplot2 to add layer for visualization
+
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+site_counts_with_smoke
+```
+
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+site_counts_with_smoke <- site_counts_with_smoke %>% rowwise() %>% mutate(fips = fips(state =State, county =County))
+
+site_counts_with_smoke$fips
+```
+
+
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+"average_pm25" %in% names(site_counts_with_smoke)
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+plot_usmap( regions = "states", labels = TRUE) +
+  labs(title = "CMAQ",
+       subtitle = "This is a blank map of the United States.") + 
+  scale_fill_continuous(low = "white", high = "blue", label = scales::comma) + 
+  theme(panel.background=element_blank())
+```
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+plot_usmap(data= site_counts_with_smoke, value="average_pm25", include = c("WA", "OR", "CA", "ID", "NV", "UT", "AZ", "NV"), regions = "counties", labels = TRUE) +
+  labs(title = "Maximun PM2.5 Value in CMAQ Area") + 
+  scale_fill_continuous(low = "white", high = "blue", name = "Maximun value of PM2.5 (µg/m³)", label = scales::comma)+   theme(legend.position = "right", plot.title = element_text(size = 50), legend.title = element_text(size = 30), legend.text = element_text(size = 30), legend.key.size = unit(1.5, "cm"), # Change the size of the legend keys
+    legend.spacing = unit(1, "cm"), # Adjust spacing between legend items
+    legend.spacing.x = unit(0.5, "cm"), # Adjust horizontal spacing specifically
+    legend.spacing.y = unit(0.5, "cm") # Adjust vertical spacing specifically
+   )
+```
+
+
+
+```{r, eval=TRUE, echo = F}
+# Create an interactive map of AQS data sites
+sites.map.smoke <- leaflet(data = site_counts_with_smoke) %>%
+  addTiles() %>%
+  addCircleMarkers(data = site_counts_with_smoke, lng = ~Longitude, lat = ~Latitude, color = "red", opacity = 1) %>%
+  addCircleMarkers(~Longitude, ~Latitude, color="blue", opacity = 0.5,
+                   radius = 2, popup = paste("State:", site_counts_with_smoke$State, "<br>",
+                                             "County:", site_counts_with_smoke$County, "<br>",
+                                             "City:", site_counts_with_smoke$City, "<br>",
+                                             "Site Code:", site_counts_with_smoke$Site.Code, "<br>",
+                                             "Counts:", site_counts_with_smoke$Count))
+# saveWidget(sites.map.bf, file="/Users/xuzichun/Desktop/merged/Sites-Map-smoke.html")
+sites.map.smoke
+
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+names(data_update)
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+result <- data_update %>%
+  group_by(POC) %>%
+  summarise(unique_numbers = n_distinct(County))
+result
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+result <- data_cleaned %>%
+  group_by(POC) %>%
+  summarise(unique_numbers = n_distinct(County))
+result
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+number_of_unique_values <- length(unique(data_update$Site.Cod))
+number_of_unique_values
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+haha <- data_update[, 11:37]
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+# Assuming 'df' is your data frame
+column_means <- sapply(haha, function(x) if(is.numeric(x)) mean(x, na.rm = TRUE) else NA)
+
+# Filter out NA values if non-numeric columns were present
+column_means <- column_means[!is.na(column_means)]
+
+```
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+mean_df <- data.frame(
+  Column = names(column_means),
+  Mean = as.numeric(column_means)
+)
+```
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+summary(haha)
+```
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+
+ggplot(mean_df, aes(x = Column, y = Mean)) +
+  geom_col(fill="orange") +
+  theme_minimal() +
+  labs(title = "Mean Values of Each Chemical", x = "Chemicals", y = "Mean(µg/m³)")
+
+```
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+stats_summary <- haha %>%
+  summarise(across(.cols = everything(), .fns = list(min = min, mean = mean, median = median), .names = "{.col}_{.fn}"))
+
+# Step 2: Reshaping the data
+# Convert the summary data frame to a long format
+long_stats_summary <- pivot_longer(stats_summary, 
+                                   cols = everything(), 
+                                   names_to = c("column", "statistic"), 
+                                   names_sep = "_",
+                                   values_to = "value")
+
+# Step 3: Plotting
+ggplot(long_stats_summary, aes(x = column, y = value, color = statistic, group = statistic)) +
+  geom_point(size = 3) +
+  labs(title = "Statistical Summary for Each Chemicals in PM2.5", x = "Chemical", y = "Value(µg/m³)") +
+  theme_minimal()
+```
+
+
+
+
+
+
+
+# correlationship origin (background)
+### check correlation for Inyo:06-027-0002,  Fresno:06-019-0011, Rubidoux: 06-065-8001, Seattle: 53-033-0080
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+# get the data for each city
+Inyodata <- data_update %>% filter(Site.Code == "06-027-0002")
+Fresno <- data_update %>% filter(Site.Code == "06-019-0011")
+Rubidoux <- data_update %>% filter(Site.Code == "06-065-8001")
+Seattle <- data_update %>% filter(Site.Code == "53-033-0080")
+
+
+Inyodata_smoke_day <- Inyodata %>% filter(smoke_indicator == 1)
+Fresno_smoke_day <- Fresno %>% filter(smoke_indicator == 1)
+Rubidoux_smoke_day <- Rubidoux %>% filter(smoke_indicator == 1)
+Seattle_smoke_day <- Seattle %>% filter(smoke_indicator == 1)
+data_smoke_day <- data_update %>% filter(smoke_indicator == 1)
+
+Inyodata_nosmoke_day <- Inyodata %>% filter(smoke_indicator == 0)
+Fresno_nosmoke_day <- Fresno %>% filter(smoke_indicator == 0)
+Rubidoux_nosmoke_day <- Rubidoux %>% filter(smoke_indicator == 0)
+Seattle_nosmoke_day <- Seattle %>% filter(smoke_indicator == 0)
+data_nosmoke_day <- data_update %>% filter(smoke_indicator == 0)
+
+```
+
+
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+par(mfrow = c(2, 1))
+hist(data_smoke_day$PM25, breaks = 100, xlim = c(0, 80), xlab = "PM2.5 (Micrograms/cubic meter)", main = "Histogram of PM2.5 in smoke day")
+# Calculate the median
+median_value <- median(data_smoke_day$PM25, na.rm = TRUE)
+
+# Add a vertical line for the median
+abline(v = median_value, col = "red", lwd = 2)
+text(x = median_value, y = par("usr")[3] + 1, labels = paste("Median:", median_value), pos = 3, col = "red")
+
+hist(data_nosmoke_day$PM25, breaks = 100, xlab = "PM2.5 (Micrograms/cubic meter)", main = "Histogram of PM2.5 in non smoke day")
+
+# Calculate the median
+median_value <- median(data_nosmoke_day$PM25, na.rm = TRUE)
+
+# Add a vertical line for the median
+abline(v = median_value, col = "red", lwd = 2)
+text(x = median_value, y = par("usr")[3] + 1, labels = paste("Median:", median_value), pos = 3, col = "red")
+par(mfrow = c(1, 1))
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+par(mfrow = c(2, 1))
+hist(data_smoke_day$OC, breaks = 100, xlab = "OC (Micrograms/cubic meter)", xlim = c(0, 20), main = "Histogram of Organic Carbon (OC) in smoke day")
+# Calculate the median
+median_value <- median(data_smoke_day$OC, na.rm = TRUE)
+text(x = median_value, y = par("usr")[3] + 1, labels = paste("Median:", median_value), pos = 3, col = "red")
+# Add a vertical line for the median
+abline(v = median_value, col = "red", lwd = 2)
+
+
+hist(data_nosmoke_day$OC, breaks = 100, xlab = "OC (Micrograms/cubic meter)", main = "Histogram of Organic Carbon (OC) in non smoke day")
+
+median_value <- median(data_nosmoke_day$OC, na.rm = TRUE)
+
+# Add a vertical line for the median
+abline(v = median_value, col = "red", lwd = 2)
+text(x = median_value, y = par("usr")[3] + 1, labels = paste("Median:", median_value), pos = 3, col = "red")
+
+
+
+par(mfrow = c(1, 1))
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+par(mfrow = c(2, 1))
+hist(data_smoke_day$EC, breaks = 100, xlab = "EC (Micrograms/cubic meter)", xlim = c(0, 6), main = "Histogram of Elemental Carbon (EC) in smoke day")
+median_value <- median(data_smoke_day$EC, na.rm = TRUE)
+abline(v = median_value, col = "red", lwd = 2)
+text(x = median_value, y = par("usr")[3] + 1, labels = paste("Median:", median_value), pos = 3, col = "red")
+
+
+hist(data_nosmoke_day$EC, breaks = 100, xlab = "EC (Micrograms/cubic meter)", main = "Histogram of Elemental Carbon (EC) in non smoke day")
+median_value <- median(data_nosmoke_day$EC, na.rm = TRUE)
+
+abline(v = median_value, col = "red", lwd = 2)
+text(x = median_value, y = par("usr")[3] + 1, labels = paste("Median:", median_value), pos = 3, col = "red")
+
+
+par(mfrow = c(1, 1))
+```
+
+
+
+
+
+
+
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+summary(Inyodata)
+```
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+par(mfrow = c(2, 2))
+boxplot(Inyodata$PM25,ylab = "PM2.5", main = "Boxplot for PM2.5")
+hist(Inyodata$PM25, xlab = "PM2.5 Micrograms/cubic meter (LC)", main = "Histogram of PM2.5")
+hist(Inyodata$PM25, xlim = c(0, 200), breaks = 100, xlab = "PM2.5 Micrograms/cubic meter (LC)", main = "Histogram of PM2.5 with(0, 200)")
+hist(Inyodata$PM25, xlim = c(0, 60), breaks = 100, xlab = "PM2.5 Micrograms/cubic meter (LC)", main = "Histogram of PM2.5 with(0, 60)")
+par(mfrow = c(1, 1))
+
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+par(mfrow = c(2, 2))
+boxplot(Inyodata$OC,ylab = "OC", main = "Boxplot for OC")
+hist(Inyodata$OC, xlab = "OC Micrograms/cubic meter (LC)", main = "Histogram of OC")
+hist(Inyodata$OC, xlim = c(0, 200), breaks = 100, xlab = "OC Micrograms/cubic meter (LC)", main = "Histogram of OC with(0, 200)")
+hist(Inyodata$OC, xlim = c(0, 60), breaks = 100, xlab = "OC Micrograms/cubic meter (LC)", main = "Histogram of OC with(0, 60)")
+par(mfrow = c(1, 1))
+
+```
+
+
+
+
+
+## correlation for Inyodata origin
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+chemicals <- names(data_update[, 11:37])
+chemicals
+```
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+## Inyodata
+correlations <- sapply(Inyodata[chemicals], function(x) cor(x, Inyodata$smoke_score, use="complete.obs"))
+
+# Convert the correlations to a dataframe for plotting
+correlation_data <- data.frame(Feature = names(correlations), Correlation = correlations)
+
+# Plot
+inyo_plot <- ggplot(correlation_data, aes(x = Correlation, y = reorder(Feature, Correlation))) +
+    geom_bar(stat = "identity", fill = "skyblue") +
+    geom_text(aes(label = sprintf("%.3f", Correlation)), color = "red", size = 5) + 
+    xlab("Correlation Coefficient") +
+    ylab("Chemical Features") +
+    ggtitle("(origin) Correlation between Chemical and Smoke Score")+ theme(
+  text = element_text(size = 12), # Base text size for all text elements
+  axis.title = element_text(size = 14), # Size of axis titles
+  axis.text = element_text(size = 14), # Size of axis text (tick labels)
+  plot.title = element_text(size = 16) # Size of the plot title
+)
+inyo_plot
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+## Inyodata
+correlations <- sapply(Inyodata_smoke_day[chemicals], function(x) cor(x, Inyodata_smoke_day$smoke_score, use="complete.obs"))
+
+# Convert the correlations to a dataframe for plotting
+correlation_data <- data.frame(Feature = names(correlations), Correlation = correlations)
+
+# Plot
+inyo_smoke_plot <- ggplot(correlation_data, aes(x = Correlation, y = reorder(Feature, Correlation))) +
+    geom_bar(stat = "identity", fill = "skyblue") +
+    geom_text(aes(label = sprintf("%.3f", Correlation)), color = "red", size = 3) + 
+    xlab("Correlation Coefficient") +
+    ylab("Chemical Features") +
+    ggtitle("(origin)(smoke day only) Correlation between Chemical and Smoke Score")
+inyo_smoke_plot
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+## Inyodata
+correlations <- sapply(Inyodata_nosmoke_day[chemicals], function(x) cor(x, Inyodata_nosmoke_day$smoke_score, use="complete.obs"))
+
+# Convert the correlations to a dataframe for plotting
+correlation_data <- data.frame(Feature = names(correlations), Correlation = correlations)
+
+# Plot
+inyo_nosmoke_plot <- ggplot(correlation_data, aes(x = Correlation, y = reorder(Feature, Correlation))) +
+    geom_bar(stat = "identity", fill = "skyblue") +
+    geom_text(aes(label = sprintf("%.3f", Correlation)), color = "red", size = 3) + 
+    xlab("Correlation Coefficient") +
+    ylab("Chemical Features") +
+    ggtitle("(origin)(smoke day only) Correlation between Chemical and Smoke Score")
+inyo_nosmoke_plot
+```
+
+```{r, eval=TRUE, echo = F, fig.height=10, fig.width=14}
+#compare Inyo correlation with or without zeros
+inyo_plot + inyo_smoke_plot
+```
+ 
+## correlation for Fresnodata origin
+```{r, eval=TRUE, echo = T, include=FALSE}
+## Fresnodata
+correlations <- sapply(Fresno[chemicals], function(x) cor(x, Fresno$smoke_score, use="complete.obs"))
+
+# Convert the correlations to a dataframe for plotting
+correlation_data <- data.frame(Feature = names(correlations), Correlation = correlations)
+
+# Plot
+Fresno_plot <- ggplot(correlation_data, aes(x = Correlation, y = reorder(Feature, Correlation))) +
+    geom_bar(stat = "identity", fill = "skyblue") +
+    geom_text(aes(label = sprintf("%.3f", Correlation)), color = "red", size = 3) + 
+    xlab("Correlation Coefficient") +
+    ylab("Chemical Features") +
+    ggtitle("(origin) Correlation between Chemical and Smoke Score")
+Fresno_plot
+```
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+## Fresnodata
+correlations <- sapply(Fresno_smoke_day[chemicals], function(x) cor(x, Fresno_smoke_day$smoke_score, use="complete.obs"))
+
+# Convert the correlations to a dataframe for plotting
+correlation_data <- data.frame(Feature = names(correlations), Correlation = correlations)
+
+# Plot
+Fresno_smoke_plot <- ggplot(correlation_data, aes(x = Correlation, y = reorder(Feature, Correlation))) +
+    geom_bar(stat = "identity", fill = "skyblue") +
+    geom_text(aes(label = sprintf("%.3f", Correlation)), color = "red", size = 3) + 
+    xlab("Correlation Coefficient") +
+    ylab("Chemical Features") +
+    ggtitle("(origin) Correlation between Chemical and Smoke Score")
+Fresno_smoke_plot
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+## Fresnodata
+correlations <- sapply(Fresno_nosmoke_day[chemicals], function(x) cor(x, Fresno_nosmoke_day$smoke_score, use="complete.obs"))
+
+# Convert the correlations to a dataframe for plotting
+correlation_data <- data.frame(Feature = names(correlations), Correlation = correlations)
+
+# Plot
+Fresno_nosmoke_plot <- ggplot(correlation_data, aes(x = Correlation, y = reorder(Feature, Correlation))) +
+    geom_bar(stat = "identity", fill = "skyblue") +
+    geom_text(aes(label = sprintf("%.3f", Correlation)), color = "red", size = 3) + 
+    xlab("Correlation Coefficient") +
+    ylab("Chemical Features") +
+    ggtitle("(origin) Correlation between Chemical and Smoke Score")
+Fresno_nosmoke_plot
+```
+
+```{r, eval=TRUE, echo = F, fig.height=10, fig.width=14}
+#compare Inyo correlation with or without zeros
+Fresno_plot + Fresno_smoke_plot
+```
+
+## There is no smoke day in Rubidoux
+
+## correlation for Seattleata orgin
+```{r, eval=TRUE, echo = T, include=FALSE}
+## Seattledata
+correlations <- sapply(Seattle[chemicals], function(x) cor(x, Seattle$smoke_score, use="complete.obs"))
+
+# Convert the correlations to a dataframe for plotting
+correlation_data <- data.frame(Feature = names(correlations), Correlation = correlations)
+
+# Plot
+Seattle_plot <- ggplot(correlation_data, aes(x = Correlation, y = reorder(Feature, Correlation))) +
+    geom_bar(stat = "identity", fill = "skyblue") +
+    geom_text(aes(label = sprintf("%.3f", Correlation)), color = "red", size = 3) + 
+    xlab("Correlation Coefficient") +
+    ylab("Chemical Features") +
+    ggtitle("(origin) Correlation between Chemical and Smoke Score")
+Seattle_plot
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+## Seattledata
+correlations <- sapply(Seattle_smoke_day[chemicals], function(x) cor(x, Seattle_smoke_day$smoke_score, use="complete.obs"))
+
+# Convert the correlations to a dataframe for plotting
+correlation_data <- data.frame(Feature = names(correlations), Correlation = correlations)
+
+# Plot
+Seattle_smoke_plot <- ggplot(correlation_data, aes(x = Correlation, y = reorder(Feature, Correlation))) +
+    geom_bar(stat = "identity", fill = "skyblue") +
+    geom_text(aes(label = sprintf("%.3f", Correlation)), color = "red", size = 3) + 
+    xlab("Correlation Coefficient") +
+    ylab("Chemical Features") +
+    ggtitle("(origin) (smoke day only) Correlation between Chemical and Smoke Score")
+Seattle_smoke_plot
+```
+
+
+```{r, eval=TRUE, echo = F, fig.height=10, fig.width=14}
+#compare Inyo correlation with or without zeros
+Seattle_plot + Seattle_smoke_plot
+```
+
+
+
+
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+chemicals_data <- data_update[, 11:37]
+```
+
+
+
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+
+adjusted_data_update <- scale(chemicals_data)
+adjusted_data_update <- as.data.frame(adjusted_data_update)
+```
+
+
+```{r}
+Site.Code<- data_update$Site.Code
+smoke_indicator <- data_update$smoke_indicator
+smoke_score <- data_update$smoke_score
+adjusted_data_update <- cbind(Site.Code, smoke_indicator,smoke_score, adjusted_data_update)
+```
+
+
+
+
+
+
+
+# we will choose four site as our example, Inyo:06-027-0002,  Fresno:06-019-0011, Rubidoux: 06-065-8001, Seattle: 53-033-0080
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+# get the data for each city
+Inyodata <- data_update %>% filter(Site.Code == "06-027-0002")
+Fresno <- data_update %>% filter(Site.Code == "06-019-0011")
+Rubidoux <- data_update %>% filter(Site.Code == "06-065-8001")
+Seattle <- data_update %>% filter(Site.Code == "53-033-0080")
+
+
+Inyodata_smoke_day <- Inyodata %>% filter(smoke_indicator == 1)
+Fresno_smoke_day <- Fresno %>% filter(smoke_indicator == 1)
+Rubidoux_smoke_day <- Rubidoux %>% filter(smoke_indicator == 1)
+Seattle_smoke_day <- Seattle %>% filter(smoke_indicator == 1)
+
+Inyodata_nosmoke_day <- Inyodata %>% filter(smoke_indicator == 0)
+Fresno_nosmoke_day <- Fresno %>% filter(smoke_indicator == 0)
+Rubidoux_nosmoke_day <- Rubidoux %>% filter(smoke_indicator == 0)
+Seattle_nosmoke_day <- Seattle %>% filter(smoke_indicator == 0)
+
+```
+
+
+
+
+
+### The histogram of the smoke score for Inyodata_smoke_day
+```{r, eval=TRUE, echo = F}
+hist(Inyodata_smoke_day$smoke_score, main="the smoke score for Inyodata smoke day", xlab="Smoke Score", col="blue", breaks = 10)
+```
+
+
+### The histogram of the smoke score for Fresno_smoke_day
+```{r, eval=TRUE, echo = F}
+hist(Fresno_smoke_day$smoke_score, main="the smoke score for Fresno smoke day", xlab="Smoke Score", col="blue", breaks = 10)
+```
+
+### There is no smoke day in Rubidoux
+
+
+### The histogram of the smoke score for Seattle_smoke_day
+```{r, eval=TRUE, echo = F}
+hist(Seattle_smoke_day$smoke_score, main="the smoke score for Seattle smoke day", xlab="Smoke Score", col="blue", breaks = 10)
+```
+
+
+
+```{r}
+nrow(Inyodata)
+nrow(Fresno)
+nrow(Rubidoux)
+nrow(Seattle)
+nrow(Inyodata_smoke_day)
+nrow(Fresno_smoke_day)
+nrow(Rubidoux_smoke_day)
+nrow(Seattle_smoke_day)
+```
+
+## There is no smoke day in Rubidoux
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+names(Rubidoux)
+```
+```{r}
+names(adjusted_data_update)
+```
+
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+## check correlation after scale for Inyo:06-027-0002,  Fresno:06-019-0011, Rubidoux: 06-065-8001, Seattle: 53-033-0080
+## Inyodata
+## Inyodata
+correlations <- sapply(Inyodata[chemicals], function(x) cor(x, Inyodata$smoke_score, use="complete.obs"))
+
+# Convert the correlations to a dataframe for plotting
+correlation_data <- data.frame(Feature = names(correlations), Correlation = correlations)
+
+# Plot
+inyo_plot_sub <- ggplot(correlation_data, aes(x = Correlation, y = reorder(Feature, Correlation))) +
+    geom_bar(stat = "identity", fill = "skyblue") +
+    geom_text(aes(label = sprintf("%.3f", Correlation)), color = "red", size = 3) + 
+    xlab("Correlation Coefficient") +
+    ylab("Chemical Features") +
+    ggtitle("(scaled) Correlation between Chemical and Smoke Score")
+inyo_plot_sub
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+## Inyodata
+correlations <- sapply(Inyodata_smoke_day[chemicals], function(x) cor(x, Inyodata_smoke_day$smoke_score, use="complete.obs"))
+
+# Convert the correlations to a dataframe for plotting
+correlation_data <- data.frame(Feature = names(correlations), Correlation = correlations)
+
+# Plot
+inyo_smoke_plot_sub <- ggplot(correlation_data, aes(x = Correlation, y = reorder(Feature, Correlation))) +
+    geom_bar(stat = "identity", fill = "skyblue") +
+    geom_text(aes(label = sprintf("%.3f", Correlation)), color = "red", size = 3) + 
+    xlab("Correlation Coefficient") +
+    ylab("Chemical Features") +
+    ggtitle("(scaled)(smoke day only) Correlation between Chemical and Smoke Score")
+inyo_smoke_plot_sub
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+## Inyodata
+correlations <- sapply(Inyodata_nosmoke_day[chemicals], function(x) cor(x, Inyodata_nosmoke_day$smoke_score, use="complete.obs"))
+
+# Convert the correlations to a dataframe for plotting
+correlation_data <- data.frame(Feature = names(correlations), Correlation = correlations)
+
+# Plot
+inyo_nosmoke_plot_sub <- ggplot(correlation_data, aes(x = Correlation, y = reorder(Feature, Correlation))) +
+    geom_bar(stat = "identity", fill = "skyblue") +
+    geom_text(aes(label = sprintf("%.3f", Correlation)), color = "red", size = 3) + 
+    xlab("Correlation Coefficient") +
+    ylab("Chemical Features") +
+    ggtitle("(scaled)(smoke day only) Correlation between Chemical and Smoke Score")
+inyo_nosmoke_plot_sub
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+#compare Inyo correlation with or without zeros
+inyo_plot_sub + inyo_smoke_plot_sub
+```
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+## Fresnodata
+correlations <- sapply(Fresno[chemicals], function(x) cor(x, Fresno$smoke_score, use="complete.obs"))
+
+# Convert the correlations to a dataframe for plotting
+correlation_data <- data.frame(Feature = names(correlations), Correlation = correlations)
+
+# Plot
+Fresno_plot_sub <- ggplot(correlation_data, aes(x = Correlation, y = reorder(Feature, Correlation))) +
+    geom_bar(stat = "identity", fill = "skyblue") +
+    geom_text(aes(label = sprintf("%.3f", Correlation)), color = "red", size = 3) + 
+    xlab("Correlation Coefficient") +
+    ylab("Chemical Features") +
+    ggtitle("(scaled) Correlation between Chemical and Smoke Score")
+Fresno_plot_sub
+```
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+## Fresnodata
+correlations <- sapply(Fresno_smoke_day[chemicals], function(x) cor(x, Fresno_smoke_day$smoke_score, use="complete.obs"))
+
+# Convert the correlations to a dataframe for plotting
+correlation_data <- data.frame(Feature = names(correlations), Correlation = correlations)
+
+# Plot
+Fresno_smoke_plot_sub <- ggplot(correlation_data, aes(x = Correlation, y = reorder(Feature, Correlation))) +
+    geom_bar(stat = "identity", fill = "skyblue") +
+    geom_text(aes(label = sprintf("%.3f", Correlation)), color = "red", size = 3) + 
+    xlab("Correlation Coefficient") +
+    ylab("Chemical Features") +
+    ggtitle("(scaled) Correlation between Chemical and Smoke Score")
+Fresno_smoke_plot_sub
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+#compare Inyo correlation with or without zeros
+Fresno_plot_sub + Fresno_smoke_plot_sub
+```
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+## Seattledata
+correlations <- sapply(Seattle[chemicals], function(x) cor(x, Seattle$smoke_score, use="complete.obs"))
+
+# Convert the correlations to a dataframe for plotting
+correlation_data <- data.frame(Feature = names(correlations), Correlation = correlations)
+
+# Plot
+Seattle_plot_sub <- ggplot(correlation_data, aes(x = Correlation, y = reorder(Feature, Correlation))) +
+    geom_bar(stat = "identity", fill = "skyblue") +
+    geom_text(aes(label = sprintf("%.3f", Correlation)), color = "red", size = 3) + 
+    xlab("Correlation Coefficient") +
+    ylab("Chemical Features") +
+    ggtitle("(scaled) Correlation between Chemical and Smoke Score")
+Seattle_plot_sub
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+## Seattledata
+correlations <- sapply(Seattle_smoke_day[chemicals], function(x) cor(x, Seattle_smoke_day$smoke_score, use="complete.obs"))
+
+# Convert the correlations to a dataframe for plotting
+correlation_data <- data.frame(Feature = names(correlations), Correlation = correlations)
+
+# Plot
+Seattle_smoke_plot_sub <- ggplot(correlation_data, aes(x = Correlation, y = reorder(Feature, Correlation))) +
+    geom_bar(stat = "identity", fill = "skyblue") +
+    geom_text(aes(label = sprintf("%.3f", Correlation)), color = "red", size = 3) + 
+    xlab("Correlation Coefficient") +
+    ylab("Chemical Features") +
+    ggtitle("(scaled) (smoke day only) Correlation between Chemical and Smoke Score")
+Seattle_smoke_plot_sub
+```
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+#compare Inyo correlation with or without zeros
+Seattle_plot_sub + Seattle_smoke_plot_sub
+```
+
+
+# PCA for each Inyo:06-027-0002,  Fresno:06-019-0011, Rubidoux: 06-065-8001,  Seattle: 53-033-0080
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+# function for plot cordinate of each chemical after PCA
+plot_pca_component <- function(pca_result, pc_number, plot_title = "") {
+  # Extract loadings for the specified PC
+  loadings_pc <- pca_result$rotation[, pc_number]
+  
+  # Convert to dataframe for ggplot2
+  loadings_df <- data.frame(Chemical = names(loadings_pc), Loading = loadings_pc)
+  
+  # Generate the plot
+  pca_plot <- ggplot(loadings_df, aes(x = Loading, y = reorder(Chemical, Loading))) + 
+    geom_bar(stat = "identity", fill = "orange") +
+    coord_flip() +  # Flip coordinates to make it horizontal
+    labs(title = sprintf("Loadings of Chemical Components on PC%d in %s", pc_number, plot_title),
+         y = "Chemical Component",
+         x = "Loading") +
+    geom_text(aes(label = sprintf("%.2f", Loading)), color = "blue", size = 3, nudge_y = 0.1) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+    theme_minimal()
+  
+  return(pca_plot)
+}
+
+
+
+```
+
+
+
+
+## Inyodata
+### Plotting the variance explained by each principal component
+#### scale(chemical_data) it has a mean of 0 and a standard deviation of 1.
+
+```{r, eval=TRUE, echo = F}
+chemical_data <- Inyodata[chemicals]
+
+chemical_data_scaled <- scale(chemical_data)
+
+# Apply PCA
+Inyodata_pca_result <- prcomp(chemical_data_scaled, scale. = FALSE)
+
+# Summary of PCA results
+summary(Inyodata_pca_result)
+
+# Optionally, visualize the variance explained by the principal components
+var_explained <- Inyodata_pca_result$sdev^2 / sum(Inyodata_pca_result$sdev^2)
+cum_var_explained <- cumsum(var_explained)
+
+# Plotting the variance explained by each principal component
+Inyodataplot<- qplot(y = cum_var_explained, x = 1:length(cum_var_explained), geom = "line", 
+        xlab = "Principal Component", ylab = "Cumulative Proportion of Variance Explained") +
+    geom_point() +
+    theme_minimal()
+Inyodataplot
+```
+
+```{r}
+fviz_eig(Inyodata_pca_result)
+```
+
+
+
+### plot PC from 1-10 for Inyo
+
+```{r, eval=TRUE, echo = F, fig.height=12, fig.width=14}
+Inyoplot_list <- list()
+for(pc in 1:10) {
+  # Generate plot for each principal component and store it in the list
+  Inyoplot_list[[pc]] <- plot_pca_component(Inyodata_pca_result, pc, "Inyo")
+}
+Inyobig_plot <- do.call(grid.arrange, c(Inyoplot_list, ncol = 2))
+# ggsave("PCA_Components.pdf", Inyobig_plot, width = 14, height = 12)
+```
+
+
+## Inyodata only smoke data
+### Plotting the variance explained by each principal component
+```{r, eval=TRUE, echo = F}
+chemical_data_smoke <- Inyodata_smoke_day[chemicals]
+
+chemical_data_scaled_smoke <- scale(chemical_data_smoke)
+
+# Apply PCA
+Inyodata_pca_result_smoke <- prcomp(chemical_data_scaled_smoke, scale. = FALSE)
+
+# Summary of PCA results
+summary(Inyodata_pca_result_smoke)
+
+# Optionally, visualize the variance explained by the principal components
+var_explained <- Inyodata_pca_result_smoke$sdev^2 / sum(Inyodata_pca_result_smoke$sdev^2)
+cum_var_explained <- cumsum(var_explained)
+
+# Plotting the variance explained by each principal component
+Inyodataplot_smoke<- qplot(y = cum_var_explained, x = 1:length(cum_var_explained), geom = "line", 
+        xlab = "Principal Component", ylab = "Cumulative Proportion of Variance Explained") +
+    geom_point() +
+    theme_minimal()
+Inyodataplot_smoke
+```
+
+
+### plot PC from 1-10 for Inyo smoke day
+```{r, eval=TRUE, echo = F, fig.height=12, fig.width=14}
+Inyoplot_list_smoke <- list()
+for(pc in 1:10) {
+  # Generate plot for each principal component and store it in the list
+  Inyoplot_list_smoke[[pc]] <- plot_pca_component(Inyodata_pca_result_smoke, pc, "Inyo (smoke day only)")
+}
+Inyobig_plot_smoke <- do.call(grid.arrange, c(Inyoplot_list_smoke, ncol = 2))
+```
+
+
+## Inyodata only nosmoke data
+### Plotting the variance explained by each principal component
+```{r, eval=TRUE, echo = F}
+chemical_data_nosmoke <- Inyodata_nosmoke_day[chemicals]
+
+# Standardize the data before PCA
+chemical_data_scaled_nosmoke <- scale(chemical_data_nosmoke)
+
+# Apply PCA
+Inyodata_pca_result_nosmoke <- prcomp(chemical_data_scaled_nosmoke, scale. = FALSE)
+
+# Summary of PCA results
+summary(Inyodata_pca_result_nosmoke)
+
+# Optionally, visualize the variance explained by the principal components
+var_explained <- Inyodata_pca_result_nosmoke$sdev^2 / sum(Inyodata_pca_result_nosmoke$sdev^2)
+cum_var_explained <- cumsum(var_explained)
+
+# Plotting the variance explained by each principal component
+Inyodataplot_nosmoke<- qplot(y = cum_var_explained, x = 1:length(cum_var_explained), geom = "line", 
+        xlab = "Principal Component", ylab = "Cumulative Proportion of Variance Explained") +
+    geom_point() +
+    theme_minimal()
+Inyodataplot_nosmoke
+```
+
+
+### plot PC from 1-10 for Inyo nosmoke day
+```{r, eval=TRUE, echo = F, fig.height=12, fig.width=14}
+Inyoplot_list_nosmoke <- list()
+for(pc in 1:10) {
+  # Generate plot for each principal component and store it in the list
+  Inyoplot_list_nosmoke[[pc]] <- plot_pca_component(Inyodata_pca_result_nosmoke, pc, "Inyo (nosmoke day only)")
+}
+Inyobig_plot_nosmoke <- do.call(grid.arrange, c(Inyoplot_list_nosmoke, ncol = 2))
+```
+
+
+## Fresnodata
+```{r, eval=TRUE, echo = F}
+chemical_data <- Fresno[chemicals]
+
+chemical_data_scaled <- scale(chemical_data)
+
+# Apply PCA
+Fresno_pca_result <- prcomp(chemical_data_scaled, scale. = FALSE)
+
+# Summary of PCA results
+summary(Fresno_pca_result)
+
+# Optionally, visualize the variance explained by the principal components
+var_explained <- Fresno_pca_result$sdev^2 / sum(Fresno_pca_result$sdev^2)
+cum_var_explained <- cumsum(var_explained)
+
+# Plotting the variance explained by each principal component
+Fresnoplot<- qplot(y = cum_var_explained, x = 1:length(cum_var_explained), geom = "line", 
+        xlab = "Principal Component", ylab = "Cumulative Proportion of Variance Explained") +
+    geom_point() +
+    theme_minimal()
+Fresnoplot
+```
+
+
+### plot PC from 1-10 for Fresno
+
+```{r, eval=TRUE, echo = F, fig.height=12, fig.width=14}
+Fresnoplot_list <- list()
+for(pc in 1:10) {
+  # Generate plot for each principal component and store it in the list
+  Fresnoplot_list[[pc]] <- plot_pca_component(Fresno_pca_result, pc, "Fresno")
+}
+Fresnobig_plot <- do.call(grid.arrange, c(Fresnoplot_list, ncol = 2))
+```
+
+
+
+## Fresno only smoke data
+```{r, eval=TRUE, echo = F}
+chemical_data_smoke <- Fresno_smoke_day[chemicals]
+
+chemical_data_scaled_smoke <- scale(chemical_data_smoke)
+
+# Apply PCA
+Fresno_pca_result_smoke <- prcomp(chemical_data_scaled_smoke, scale. = FALSE)
+
+# Summary of PCA results
+summary(Fresno_pca_result_smoke)
+
+# Optionally, visualize the variance explained by the principal components
+var_explained <- Fresno_pca_result_smoke$sdev^2 / sum(Fresno_pca_result_smoke$sdev^2)
+cum_var_explained <- cumsum(var_explained)
+
+# Plotting the variance explained by each principal component
+Fresnoplot_smoke<- qplot(y = cum_var_explained, x = 1:length(cum_var_explained), geom = "line", 
+        xlab = "Principal Component", ylab = "Cumulative Proportion of Variance Explained") +
+    geom_point() +
+    theme_minimal()
+Fresnoplot_smoke
+```
+
+
+### plot PC from 1-10 for Fresno_smoke
+
+```{r, eval=TRUE, echo = F, fig.height=12, fig.width=14}
+Fresnoplot_list_smoke <- list()
+for(pc in 1:10) {
+  # Generate plot for each principal component and store it in the list
+  Fresnoplot_list_smoke[[pc]] <- plot_pca_component(Fresno_pca_result_smoke, pc, "Fresno (smoke day only)")
+}
+Fresnobig_plot_smoke <- do.call(grid.arrange, c(Fresnoplot_list_smoke, ncol = 2))
+```
+
+
+
+
+## Fresno only nosmoke data
+```{r, eval=TRUE, echo = F}
+chemical_data_nosmoke <- Fresno_nosmoke_day[chemicals]
+
+# Standardize the data before PCA
+chemical_data_scaled_nosmoke <- scale(chemical_data_nosmoke)
+
+# Apply PCA
+Fresno_pca_result_nosmoke <- prcomp(chemical_data_scaled_nosmoke, scale. = FALSE)
+
+# Summary of PCA results
+summary(Fresno_pca_result_nosmoke)
+
+# Optionally, visualize the variance explained by the principal components
+var_explained <- Fresno_pca_result_nosmoke$sdev^2 / sum(Fresno_pca_result_nosmoke$sdev^2)
+cum_var_explained <- cumsum(var_explained)
+
+# Plotting the variance explained by each principal component
+Fresnoplot_nosmoke<- qplot(y = cum_var_explained, x = 1:length(cum_var_explained), geom = "line", 
+        xlab = "Principal Component", ylab = "Cumulative Proportion of Variance Explained") +
+    geom_point() +
+    theme_minimal()
+Fresnoplot_nosmoke
+```
+
+
+### plot PC from 1-10 for Fresno_nosmoke
+
+```{r, eval=TRUE, echo = F, fig.height=12, fig.width=14}
+Fresnoplot_list_nosmoke <- list()
+for(pc in 1:10) {
+  # Generate plot for each principal component and store it in the list
+  Fresnoplot_list_nosmoke[[pc]] <- plot_pca_component(Fresno_pca_result_nosmoke, pc, "Fresno (nosmoke day only)")
+}
+Fresnobig_plot_nosmoke <- do.call(grid.arrange, c(Fresnoplot_list_nosmoke, ncol = 2))
+```
+
+
+
+
+## Rubidouxdata
+```{r, eval=TRUE, echo = F}
+chemical_data <- Rubidoux[chemicals]
+
+chemical_data_scaled <- chemical_data
+
+# Apply PCA
+Rubidoux_pca_result <- prcomp(chemical_data_scaled, scale. = FALSE)
+
+# Summary of PCA results
+summary(Rubidoux_pca_result)
+
+# Optionally, visualize the variance explained by the principal components
+var_explained <- Rubidoux_pca_result$sdev^2 / sum(Rubidoux_pca_result$sdev^2)
+cum_var_explained <- cumsum(var_explained)
+
+# Plotting the variance explained by each principal component
+Rubidouxplot<- qplot(y = cum_var_explained, x = 1:length(cum_var_explained), geom = "line", 
+        xlab = "Principal Component", ylab = "Cumulative Proportion of Variance Explained") +
+    geom_point() +
+    theme_minimal()
+Rubidouxplot
+```
+
+### plot PC from 1-10 for Rubidoux （we don't have non_smoke day for Rubidoux）
+
+```{r, eval=TRUE, echo = F, fig.height=12, fig.width=14}
+Rubidouxplot_list <- list()
+for(pc in 1:10) {
+  # Generate plot for each principal component and store it in the list
+  Rubidouxplot_list[[pc]] <- plot_pca_component(Rubidoux_pca_result, pc, "Rubidoux")
+}
+Rubidouxbig_plot <- do.call(grid.arrange, c(Rubidouxplot_list, ncol = 2))
+```
+
+
+## Seattledata
+```{r, eval=TRUE, echo = F}
+chemical_data <- Seattle[chemicals]
+
+chemical_data_scaled <- scale(chemical_data)
+
+# Apply PCA
+Seattle_pca_result <- prcomp(chemical_data_scaled, scale. = FALSE)
+
+# Summary of PCA results
+summary(Seattle_pca_result)
+
+# Optionally, visualize the variance explained by the principal components
+var_explained <- Seattle_pca_result$sdev^2 / sum(Seattle_pca_result$sdev^2)
+cum_var_explained <- cumsum(var_explained)
+
+# Plotting the variance explained by each principal component
+Seattleplot<- qplot(y = cum_var_explained, x = 1:length(cum_var_explained), geom = "line", 
+        xlab = "Principal Component", ylab = "Cumulative Proportion of Variance Explained") +
+    geom_point() +
+    theme_minimal()
+Seattleplot
+```
+
+### plot PC from 1-10 for Seattle
+
+```{r, eval=TRUE, echo = F, fig.height=12, fig.width=14}
+Seattleplot_list <- list()
+for(pc in 1:10) {
+  # Generate plot for each principal component and store it in the list
+  Seattleplot_list[[pc]] <- plot_pca_component(Seattle_pca_result, pc, "Seattle")
+}
+Seattlebig_plot <- do.call(grid.arrange, c(Seattleplot_list, ncol = 2))
+```
+
+## Seattle only smoke data
+```{r, eval=TRUE, echo = F}
+chemical_data_smoke <- Seattle_smoke_day[chemicals]
+
+chemical_data_scaled_smoke <- scale(chemical_data_smoke)
+
+# Apply PCA
+Seattle_pca_result_smoke <- prcomp(chemical_data_scaled_smoke, scale. = FALSE)
+
+# Summary of PCA results
+summary(Seattle_pca_result_smoke)
+
+# Optionally, visualize the variance explained by the principal components
+var_explained <- Seattle_pca_result_smoke$sdev^2 / sum(Seattle_pca_result_smoke$sdev^2)
+cum_var_explained <- cumsum(var_explained)
+
+# Plotting the variance explained by each principal component
+Seattleplot_smoke<- qplot(y = cum_var_explained, x = 1:length(cum_var_explained), geom = "line", 
+        xlab = "Principal Component", ylab = "Cumulative Proportion of Variance Explained") +
+    geom_point() +
+    theme_minimal()
+Seattleplot_smoke
+```
+
+### plot PC from 1-10 for Seattle （smoke day only）
+
+```{r, eval=TRUE, echo = F, fig.height=12, fig.width=14}
+Seattleplot_list_smoke <- list()
+for(pc in 1:10) {
+  # Generate plot for each principal component and store it in the list
+  Seattleplot_list_smoke[[pc]] <- plot_pca_component(Seattle_pca_result_smoke, pc, "Seattle smoke day only")
+}
+Seattlebig_plot_smoke <- do.call(grid.arrange, c(Seattleplot_list_smoke, ncol = 2))
+```
+
+
+
+
+
+
+## Seattle only nosmoke data
+```{r, eval=TRUE, echo = F}
+chemical_data_nosmoke <- Seattle_nosmoke_day[chemicals]
+
+# Standardize the data before PCA
+chemical_data_scaled_nosmoke <- scale(chemical_data_nosmoke)
+
+# Apply PCA
+Seattle_pca_result_nosmoke <- prcomp(chemical_data_scaled_nosmoke, scale. = FALSE)
+
+# Summary of PCA results
+summary(Seattle_pca_result_nosmoke)
+
+# Optionally, visualize the variance explained by the principal components
+var_explained <- Seattle_pca_result_nosmoke$sdev^2 / sum(Seattle_pca_result_nosmoke$sdev^2)
+cum_var_explained <- cumsum(var_explained)
+
+# Plotting the variance explained by each principal component
+Seattleplot_nosmoke<- qplot(y = cum_var_explained, x = 1:length(cum_var_explained), geom = "line", 
+        xlab = "Principal Component", ylab = "Cumulative Proportion of Variance Explained") +
+    geom_point() +
+    theme_minimal()
+Seattleplot_nosmoke
+```
+
+### plot PC from 1-10 for Seattle （nosmoke day only）
+
+```{r, eval=TRUE, echo = F, fig.height=12, fig.width=14}
+Seattleplot_list_nosmoke <- list()
+for(pc in 1:10) {
+  # Generate plot for each principal component and store it in the list
+  Seattleplot_list_nosmoke[[pc]] <- plot_pca_component(Seattle_pca_result_nosmoke, pc, "Seattle nosmoke day only")
+}
+Seattlebig_plot_nosmoke <- do.call(grid.arrange, c(Seattleplot_list_nosmoke, ncol = 2))
+```
+
+
+
+
+
+
+
+
+
+
+# Normalize the chemical column
+```{r}
+#normalizing function
+normalize_column <- function(column){
+  background <- quantile(column, 0)
+  max <- quantile(column, 1)
+  return ((column - background)/(max - background))
+}
+```
+
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+normalize_chemical <- data_update
+```
+
+
+
+
+
+```{r}
+#Getting the Transpose
+normalize_chemical <- sapply(data_update[, 11:37], normalize_column) #normalize the chemicals
+normalize_chemical <- data.frame(normalize_chemical)
+Site.Code <- data_update$Site.Code
+smoke_indicator <- data_update$smoke_indicator
+smoke_score<- data_update$smoke_score
+normalize_chemical <- cbind(Site.Code, smoke_indicator,smoke_score, normalize_chemical)
+```
+
+```{r}
+summary(normalize_chemical)
+```
+
+
+
+
+
+# NMF for each Inyo:06-027-0002,  Fresno:06-019-0011, Rubidoux: 06-065-8001,  Seattle: 53-033-0080
+```{r, eval=TRUE, echo = T, include=FALSE}
+# install.packages("BiocManager")
+# BiocManager::install("Biobase")
+library(NMF)
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+# get the data for each city
+Inyodata_nmf_nom <- normalize_chemical %>% filter(Site.Code == "06-027-0002")
+Fresno_nmf_nom <- normalize_chemical %>% filter(Site.Code == "06-019-0011")
+Rubidoux_nmf_nom <- normalize_chemical %>% filter(Site.Code == "06-065-8001")
+Seattle_nmf_nom <- normalize_chemical %>% filter(Site.Code == "53-033-0080")
+
+
+Inyodata_smoke_day_nmf_nom <- Inyodata_nmf_nom %>% filter(smoke_indicator == 1)
+Fresno_smoke_day_nmf_nom <- Fresno_nmf_nom %>% filter(smoke_indicator == 1)
+Rubidoux_smoke_day_nmf_nom <- Rubidoux_nmf_nom %>% filter(smoke_indicator == 1)
+Seattle_smoke_day_nmf_nom <- Seattle_nmf_nom %>% filter(smoke_indicator == 1)
+
+Inyodata_nosmoke_day_nmf_nom <- Inyodata_nmf_nom %>% filter(smoke_indicator == 0)
+Fresno_nosmoke_day_nmf_nom <- Fresno_nmf_nom %>% filter(smoke_indicator == 0)
+Rubidoux_nosmoke_day_nmf_nom <- Rubidoux_nmf_nom %>% filter(smoke_indicator == 0)
+Seattle_nosmoke_day_nmf_nom <- Seattle_nmf_nom %>% filter(smoke_indicator == 0)
+
+Inyodata_nmf <- Inyodata_nmf_nom[, 4:29]
+Fresno_nmf <- Fresno_nmf_nom[, 4:29]
+Rubidoux_nmf <- Rubidoux_nmf_nom[, 4:29]
+Seattle_nmf <- Seattle_nmf_nom[, 4:29]
+
+Inyodata_smoke_day_nmf <- Inyodata_smoke_day_nmf_nom[, 4:29]
+Fresno_smoke_day_nmf  <- Fresno_smoke_day_nmf_nom [, 4:29]
+Rubidoux_smoke_day_nmf <- Rubidoux_smoke_day_nmf_nom[, 4:29]
+Seattle_smoke_day_nmf  <- Seattle_smoke_day_nmf_nom [, 4:29]
+
+Inyodata_nosmoke_day_nmf <- Inyodata_nosmoke_day_nmf_nom[, 4:29]
+Fresno_nosmoke_day_nmf <- Fresno_nosmoke_day_nmf_nom[, 4:29]
+Rubidoux_nosmoke_day_nmf  <- Rubidoux_nosmoke_day_nmf_nom [, 4:29]
+Seattle_nosmoke_day_nmf <- Seattle_nosmoke_day_nmf_nom[, 4:29]
+
+```
+
+
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+
+
+# get the data for each city
+#Inyodata_nmf <- Inyodata[, 11:37]
+#Fresno_nmf <- Fresno[, 11:37]
+#Rubidoux_nmf <- Rubidoux[, 11:37]
+#Seattle_nmf <- Seattle[, 11:37]
+
+#Inyodata_smoke_day_nmf <- Inyodata_smoke_day[, 11:37]
+#Fresno_smoke_day_nmf <- Fresno_smoke_day[, 11:37]
+#Rubidoux_smoke_day_nmf <- Rubidoux_smoke_day[, 11:37]
+#Seattle_smoke_day_nmf <- Seattle_smoke_day[, 11:37]
+
+#Inyodata_nosmoke_day_nmf <- Inyodata_nosmoke_day[, 11:37]
+#Fresno_nosmoke_day_nmf <- Fresno_nosmoke_day[, 11:37]
+#Rubidoux_nosmoke_day_nmf <- Rubidoux_nosmoke_day[, 11:37]
+#Seattle_nosmoke_day_nmf <- Seattle_nosmoke_day[, 11:37]
+
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+nrow(Inyodata_nmf)
+nrow(Fresno_nmf)
+nrow(Rubidoux_nmf)
+nrow(Seattle_nmf)
+nrow(Inyodata_smoke_day_nmf)
+nrow(Fresno_smoke_day_nmf)
+nrow(Rubidoux_smoke_day_nmf)
+nrow(Seattle_smoke_day_nmf)
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+write_csv(Inyodata_nmf, "/Users/xuzichun/Desktop/merged/Inyodata.csv")
+```
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+## check correlation after normorlization for Inyo:06-027-0002,  Fresno:06-019-0011, Rubidoux: 06-065-8001, Seattle: 53-033-0080
+## Inyodata
+correlations <- sapply(Inyodata_nmf_nom[chemicals], function(x) cor(x, Inyodata_nmf_nom$smoke_score, use="complete.obs"))
+
+# Convert the correlations to a dataframe for plotting
+correlation_data <- data.frame(Feature = names(correlations), Correlation = correlations)
+
+# Plot
+inyo_plot_nom <- ggplot(correlation_data, aes(x = Correlation, y = reorder(Feature, Correlation))) +
+    geom_bar(stat = "identity", fill = "lightblue") +
+    geom_text(aes(label = sprintf("%.3f", Correlation)), color = "red", size = 5) + 
+    xlab("Correlation Coefficient") +
+    ylab("Chemical Features") +
+    ggtitle("(normalization) Correlation between Chemical and Smoke Score")+ theme(
+  text = element_text(size = 12), # Base text size for all text elements
+  axis.title = element_text(size = 14), # Size of axis titles
+  axis.text = element_text(size = 14), # Size of axis text (tick labels)
+  plot.title = element_text(size = 16) # Size of the plot title
+)
+
+inyo_plot_nom
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+## Inyodata
+correlations <- sapply(Inyodata_smoke_day_nmf_nom[chemicals], function(x) cor(x, Inyodata_smoke_day_nmf_nom$smoke_score, use="complete.obs"))
+
+# Convert the correlations to a dataframe for plotting
+correlation_data <- data.frame(Feature = names(correlations), Correlation = correlations)
+
+# Plot
+inyo_smoke_plot_nom <- ggplot(correlation_data, aes(x = Correlation, y = reorder(Feature, Correlation))) +
+    geom_bar(stat = "identity", fill = "skyblue") +
+    geom_text(aes(label = sprintf("%.3f", Correlation)), color = "red", size = 4) + 
+    xlab("Correlation Coefficient") +
+    ylab("Chemical Features") +
+    ggtitle("(normalization) (smoke day only) Correlation between Chemical and Smoke Score")
+inyo_smoke_plot_nom
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+## Inyodata
+correlations <- sapply(Inyodata_nosmoke_day_nmf_nom[chemicals], function(x) cor(x, Inyodata_nosmoke_day_nmf_nom$smoke_score, use="complete.obs"))
+
+# Convert the correlations to a dataframe for plotting
+correlation_data <- data.frame(Feature = names(correlations), Correlation = correlations)
+
+# Plot
+inyo_nosmoke_plot_nom <- ggplot(correlation_data, aes(x = Correlation, y = reorder(Feature, Correlation))) +
+    geom_bar(stat = "identity", fill = "skyblue") +
+    geom_text(aes(label = sprintf("%.3f", Correlation)), color = "red", size = 3) + 
+    xlab("Correlation Coefficient") +
+    ylab("Chemical Features") +
+    ggtitle("(normalization) (smoke day only) Correlation between Chemical and Smoke Score")
+inyo_nosmoke_plot_nom
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+#compare Inyo correlation with or without zeros
+# inyo_plot_nom + inyo_smoke_plot_nom
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+
+## Fresnodata correlation after normorlization
+correlations <- sapply(Fresno_nmf_nom[chemicals], function(x) cor(x, Fresno_nmf_nom$smoke_score, use="complete.obs"))
+
+# Convert the correlations to a dataframe for plotting
+correlation_data <- data.frame(Feature = names(correlations), Correlation = correlations)
+
+# Plot
+Fresno_plot_nom <- ggplot(correlation_data, aes(x = Correlation, y = reorder(Feature, Correlation))) +
+    geom_bar(stat = "identity", fill = "skyblue") +
+    geom_text(aes(label = sprintf("%.3f", Correlation)), color = "red", size = 3) + 
+    xlab("Correlation Coefficient") +
+    ylab("Chemical Features") +
+    ggtitle("(normalization) Correlation between Chemical and Smoke Score")
+Fresno_plot_nom
+```
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+## Fresnodata
+correlations <- sapply(Fresno_smoke_day_nmf_nom[chemicals], function(x) cor(x, Fresno_smoke_day_nmf_nom$smoke_score, use="complete.obs"))
+
+# Convert the correlations to a dataframe for plotting
+correlation_data <- data.frame(Feature = names(correlations), Correlation = correlations)
+
+# Plot
+Fresno_smoke_plot_nom <- ggplot(correlation_data, aes(x = Correlation, y = reorder(Feature, Correlation))) +
+    geom_bar(stat = "identity", fill = "skyblue") +
+    geom_text(aes(label = sprintf("%.3f", Correlation)), color = "red", size = 3) + 
+    xlab("Correlation Coefficient") +
+    ylab("Chemical Features") +
+    ggtitle("(normalization) Correlation between Chemical and Smoke Score")
+Fresno_smoke_plot_nom
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+#compare Inyo correlation with or without zeros
+# Fresno_plot_nom + Fresno_smoke_plot_nom
+```
+
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+## Seattleata correlation after normorlization
+correlations <- sapply(Seattle_nmf_nom[chemicals], function(x) cor(x, Seattle_nmf_nom$smoke_score, use="complete.obs"))
+
+# Convert the correlations to a dataframe for plotting
+correlation_data <- data.frame(Feature = names(correlations), Correlation = correlations)
+
+# Plot
+Seattle_plot_nom <- ggplot(correlation_data, aes(x = Correlation, y = reorder(Feature, Correlation))) +
+    geom_bar(stat = "identity", fill = "skyblue") +
+    geom_text(aes(label = sprintf("%.3f", Correlation)), color = "red", size = 3) + 
+    xlab("Correlation Coefficient") +
+    ylab("Chemical Features") +
+    ggtitle("(normalization) Correlation between Chemical and Smoke Score")
+Seattle_plot_nom
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+## Seattledata
+correlations <- sapply(Seattle_smoke_day_nmf_nom[chemicals], function(x) cor(x, Seattle_smoke_day_nmf_nom$smoke_score, use="complete.obs"))
+
+# Convert the correlations to a dataframe for plotting
+correlation_data <- data.frame(Feature = names(correlations), Correlation = correlations)
+
+# Plot
+Seattle_smoke_plot_nom <- ggplot(correlation_data, aes(x = Correlation, y = reorder(Feature, Correlation))) +
+    geom_bar(stat = "identity", fill = "skyblue") +
+    geom_text(aes(label = sprintf("%.3f", Correlation)), color = "red", size = 3) + 
+    xlab("Correlation Coefficient") +
+    ylab("Chemical Features") +
+    ggtitle("(normalization) (smoke day only) Correlation between Chemical and Smoke Score")
+Seattle_smoke_plot_nom
+```
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+#compare Inyo correlation with or without zeros
+# Seattle_plot_nom + Seattle_smoke_plot_nom
+```
+
+
+## Inyodata
+
+## use plot the reconstruction error for NMF to find the best rank
+#### This is the sample code to show how to get the error
+
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+Inyodata_nmf_matrix <- as.matrix(Inyodata_nmf)
+# Prepare variables to store results
+components <- 2:20
+errors <- numeric(length(components) - 1)
+
+# Loop over the number of components
+for (n in components) {
+  nmf_result <- nmf(Inyodata_nmf_matrix, rank = n, method = "KL", seed='nndsvd')
+  reconstruction <- basis(nmf_result)%*% coef(nmf_result)
+  error <- norm(Inyodata_nmf_matrix - reconstruction, type = "F")
+  errors[n-1] <- error
+}
+
+```
+
+```{r}
+Inyodata_nmf
+```
+
+
+```{r}
+featureScore(nmf_result)
+```
+
+
+```{r}
+extractFeatures(nmf_result)
+```
+
+
+# what's the meaning for featureScore()? what's the extractFeatures
+
+
+
+#### The result of this multiplication is a matrix approximation of the original data matrix V that was factorized by NMF. 
+
+
+
+```{r, eval=TRUE, echo = F}
+# Plot the errors
+df <- data.frame(components, errors)
+ggplot(df, aes(x = components, y = errors)) +
+  geom_line() +
+  geom_point() +
+  theme_minimal() +
+  geom_text(aes(label = sprintf("%.3f", errors)), color = "blue", size = 3, vjust = -0.5) +
+  labs(title = "NMF Reconstruction Error vs. Number of Components",
+       x = "Number of Components", y = "Reconstruction Error")
+```
+
+
+```{r, eval=TRUE, echo = F}
+Inyodata_rankerror6 <-  df[5,2]
+Inyodata_rankerror6
+```
+
+### choose 6
+```{r, eval=TRUE, echo = F}
+# Apply NMF
+Inyodata_nmf_result <- nmf(Inyodata_nmf, rank = 6, method = "KL", seed='nndsvd')
+
+# Examine the basis matrix (W)
+Inyodata_basis_matrix <- basis(Inyodata_nmf_result)
+# print(Inyodata_basis_matrix)
+
+# Examine the coefficient matrix (H)
+Inyodata_coef_matrix <- coef(Inyodata_nmf_result)
+# print(Inyodata_coef_matrix)
+
+# Optionally, visualize the results
+par(mfrow = c(1, 2))
+# Basis matrix
+image(Inyodata_basis_matrix, main = "Basis Matrix (W)")
+# Coefficient matrix
+image(Inyodata_coef_matrix, main = "Coefficient Matrix (H)")
+
+```
+
+
+#### This specifies the objective function that the algorithm will try to minimize. The Frobenius norm method aims to minimize the difference between the original matrix and the product of the two matrices W and H, measured by the Frobenius norm (which is like a Euclidean distance for matrices).
+
+#### nndsvd stands for Non-negative Double Singular Value Decomposition, a method used to initialize the W and H matrices in a way that helps the NMF algorithm converge more reliably and quickly. It's a good choice for a seed because it starts the factorization with matrices that are already close to non-negative, reducing the amount of work the algorithm needs to do.
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+# Convert H to a data frame for ggplot
+Inyodata_H_df <- as.data.frame(Inyodata_coef_matrix)
+# Add a column for chemicals
+Inyodata_H_df$Chemical <- rownames(Inyodata_H_df)
+
+# Reshape data to long format
+Inyodata_H_long <- pivot_longer(Inyodata_H_df, cols = -Chemical, names_to = "Component", values_to = "Contribution")
+
+Inyodata_NFM1 <- subset(Inyodata_H_long, Chemical == '1')
+# Plot
+Inyodata_nfmplt_1 <- ggplot(Inyodata_NFM1, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "orange") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 4, nudge_y = 0.1) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components1")+
+  theme(
+  text = element_text(size = 14), # Base text size for all text elements
+  axis.title = element_text(size = 16), # Size of axis titles
+  axis.text = element_text(size = 12), # Size of axis text (tick labels)
+  plot.title = element_text(size = 18) # Size of the plot title
+)
+Inyodata_nfmplt_1
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+Inyodata_NFM2 <- subset(Inyodata_H_long, Chemical == '2')
+# Plot
+Inyodata_nfmplt_2 <- ggplot(Inyodata_NFM2, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill ="orange") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 4, nudge_y = 0.1) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components2")+
+  theme(
+  text = element_text(size = 14), # Base text size for all text elements
+  axis.title = element_text(size = 16), # Size of axis titles
+  axis.text = element_text(size = 12), # Size of axis text (tick labels)
+  plot.title = element_text(size = 18) # Size of the plot title
+)
+
+Inyodata_NFM3 <- subset(Inyodata_H_long, Chemical == '3')
+# Plot
+Inyodata_nfmplt_3 <- ggplot(Inyodata_NFM3, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "orange") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 4, nudge_y = 0.1) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components3")+
+  theme(
+  text = element_text(size = 14), # Base text size for all text elements
+  axis.title = element_text(size = 16), # Size of axis titles
+  axis.text = element_text(size = 12), # Size of axis text (tick labels)
+  plot.title = element_text(size = 18) # Size of the plot title
+)
+
+Inyodata_NFM4 <- subset(Inyodata_H_long, Chemical == '4')
+# Plot
+Inyodata_nfmplt_4 <- ggplot(Inyodata_NFM4, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "orange") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 4, nudge_y = 0.1) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components4")+
+  theme(
+  text = element_text(size = 14), # Base text size for all text elements
+  axis.title = element_text(size = 16), # Size of axis titles
+  axis.text = element_text(size = 12), # Size of axis text (tick labels)
+  plot.title = element_text(size = 18) # Size of the plot title
+)
+
+Inyodata_NFM5 <- subset(Inyodata_H_long, Chemical == '5')
+# Plot
+Inyodata_nfmplt_5 <- ggplot(Inyodata_NFM5, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "orange") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 4, nudge_y = 0.1) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components5")+
+  theme(
+  text = element_text(size = 14), # Base text size for all text elements
+  axis.title = element_text(size = 16), # Size of axis titles
+  axis.text = element_text(size = 12), # Size of axis text (tick labels)
+  plot.title = element_text(size = 18) # Size of the plot title
+)
+
+Inyodata_NFM6 <- subset(Inyodata_H_long, Chemical == '6')
+# Plot
+Inyodata_nfmplt_6 <- ggplot(Inyodata_NFM6, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "orange") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 4, nudge_y = 0.1) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components6")+
+  theme(
+  text = element_text(size = 14), # Base text size for all text elements
+  axis.title = element_text(size = 16), # Size of axis titles
+  axis.text = element_text(size = 12), # Size of axis text (tick labels)
+  plot.title = element_text(size = 18) # Size of the plot title
+)
+
+Inyodata_NFM7 <- subset(Inyodata_H_long, Chemical == '7')
+# Plot
+Inyodata_nfmplt_7 <- ggplot(Inyodata_NFM7, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "orange") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 4, nudge_y = 0.1) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components7")
+
+Inyodata_NFM8<- subset(Inyodata_H_long, Chemical == '8')
+# Plot
+Inyodata_nfmplt_8 <- ggplot(Inyodata_NFM8, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "orange") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 4, nudge_y = 0.1) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components8")
+
+Inyodata_NFM9 <- subset(Inyodata_H_long, Chemical == '9')
+# Plot
+Inyodata_nfmplt_9 <- ggplot(Inyodata_NFM9, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "orange") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components9")
+
+Inyodata_NFM10 <- subset(Inyodata_H_long, Chemical == '10')
+# Plot
+Inyodata_nfmplt_10 <- ggplot(Inyodata_NFM10, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "orange") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components10")
+```
+
+```{r, eval=TRUE, echo = FALSE, fig.height=15, fig.width=20}
+grid.arrange(Inyodata_nfmplt_1, Inyodata_nfmplt_2, Inyodata_nfmplt_3, Inyodata_nfmplt_4, Inyodata_nfmplt_5,  Inyodata_nfmplt_6, ncol=2)
+```
+
+
+
+## Inyodata smoke only
+
+### use plot the reconstruction error for NMF to find the best rank
+```{r, eval=TRUE, echo = T, include=FALSE}
+# normalize_chemical <- sapply(Inyodata_smoke_day[chemicals], normalize_column) #normalize the chemicals
+Inyodata_nmf_matrix_smoke <- as.matrix(Inyodata_smoke_day_nmf)
+# Prepare variables to store results
+components <- 2:20
+errors_smoke <- numeric(length(components))
+
+# Loop over the number of components
+for (n in components) {
+  nmf_result_smoke <- nmf(Inyodata_nmf_matrix_smoke, rank = n, method = "KL", seed='nndsvd')
+  reconstruction_smoke <- nmf_result_smoke@fit@W %*% nmf_result_smoke@fit@H
+  error_smoke <- norm(Inyodata_nmf_matrix_smoke - reconstruction_smoke, type = "F")
+  errors_smoke[n - 1] <- error_smoke
+}
+
+```
+
+```{r, eval=TRUE, echo = F}
+# Plot the errors
+df <- data.frame(components, errors_smoke)
+ggplot(df, aes(x = components, y = errors_smoke)) +
+  geom_line() +
+  geom_point() +
+  theme_minimal() +
+  geom_text(aes(label = sprintf("%.3f", errors_smoke)), color = "blue", size = 3, vjust = -0.5) +
+  labs(title = "NMF Reconstruction Error vs. Number of Components (smoke only)",
+       x = "Number of Components", y = "Reconstruction Error")
+```
+
+```{r, eval=TRUE, echo = F}
+Inyodata_smoke_rankerror6 <-  df[5,2]
+Inyodata_smoke_rankerror6
+```
+
+### choose 6
+```{r, eval=TRUE, echo = T, include=FALSE}
+# Apply NMF
+Inyodata_nmf_result_smoke <- nmf(Inyodata_smoke_day_nmf, rank = 6, method = "KL", seed='nndsvd')
+
+# Examine the basis matrix (W)
+Inyodata_basis_matrix_smoke <- basis(Inyodata_nmf_result_smoke)
+
+# Examine the coefficient matrix (H)
+Inyodata_coef_matrix_smoke <- coef(Inyodata_nmf_result_smoke)
+
+```
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+# Convert H to a data frame for ggplot
+Inyodata_H_df_smoke <- as.data.frame(Inyodata_coef_matrix_smoke)
+# Add a column for chemicals
+Inyodata_H_df_smoke$Chemical <- rownames(Inyodata_H_df_smoke)
+
+# Reshape data to long format
+Inyodata_H_long_smoke <- pivot_longer(Inyodata_H_df_smoke, cols = -Chemical, names_to = "Component", values_to = "Contribution")
+
+Inyodata_NFM1_smoke <- subset(Inyodata_H_long_smoke, Chemical == '1')
+# Plot
+Inyodata_nfmplt_1_smoke <- ggplot(Inyodata_NFM1_smoke, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "orange") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 4, nudge_y = 0.1) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components1 (smoke day only)")+
+  theme(
+  text = element_text(size = 14), # Base text size for all text elements
+  axis.title = element_text(size = 16), # Size of axis titles
+  axis.text = element_text(size = 12), # Size of axis text (tick labels)
+  plot.title = element_text(size = 18) # Size of the plot title
+)
+```
+```{r, eval=TRUE, echo = T, include=FALSE}
+Inyodata_NFM2_smoke <- subset(Inyodata_H_long_smoke, Chemical == '2')
+# Plot
+Inyodata_nfmplt_2_smoke <- ggplot(Inyodata_NFM2_smoke, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "orange") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 4, nudge_y = 0.1) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components2 (smoke day only)")+
+  theme(
+  text = element_text(size = 14), # Base text size for all text elements
+  axis.title = element_text(size = 16), # Size of axis titles
+  axis.text = element_text(size = 12), # Size of axis text (tick labels)
+  plot.title = element_text(size = 18) # Size of the plot title
+)
+
+Inyodata_NFM3_smoke <- subset(Inyodata_H_long_smoke, Chemical == '3')
+# Plot
+Inyodata_nfmplt_3_smoke <- ggplot(Inyodata_NFM3_smoke, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "orange") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 4, nudge_y = 0.1) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components3 (smoke day only)")+
+  theme(
+  text = element_text(size = 14), # Base text size for all text elements
+  axis.title = element_text(size = 16), # Size of axis titles
+  axis.text = element_text(size = 12), # Size of axis text (tick labels)
+  plot.title = element_text(size = 18) # Size of the plot title
+)
+
+Inyodata_NFM4_smoke <- subset(Inyodata_H_long_smoke, Chemical == '4')
+# Plot
+Inyodata_nfmplt_4_smoke <- ggplot(Inyodata_NFM4_smoke, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "orange") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 4, nudge_y = 0.1) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components4 (smoke day only)")+
+  theme(
+  text = element_text(size = 14), # Base text size for all text elements
+  axis.title = element_text(size = 16), # Size of axis titles
+  axis.text = element_text(size = 12), # Size of axis text (tick labels)
+  plot.title = element_text(size = 18) # Size of the plot title
+)
+
+Inyodata_NFM5_smoke <- subset(Inyodata_H_long_smoke, Chemical == '5')
+# Plot
+Inyodata_nfmplt_5_smoke <- ggplot(Inyodata_NFM5_smoke, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components5 (smoke day only)")
+
+Inyodata_NFM6_smoke <- subset(Inyodata_H_long_smoke, Chemical == '6')
+# Plot
+Inyodata_nfmplt_6_smoke <- ggplot(Inyodata_NFM6_smoke, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components6 (smoke day only)")
+
+Inyodata_NFM7_smoke <- subset(Inyodata_H_long_smoke, Chemical == '7')
+# Plot
+Inyodata_nfmplt_7_smoke <- ggplot(Inyodata_NFM7_smoke, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components7 (smoke day only)")
+
+Inyodata_NFM8_smoke <- subset(Inyodata_H_long_smoke, Chemical == '8')
+# Plot
+Inyodata_nfmplt_8_smoke <- ggplot(Inyodata_NFM8_smoke, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components8 (smoke day only)")
+
+Inyodata_NFM9_smoke <- subset(Inyodata_H_long_smoke, Chemical == '9')
+# Plot
+Inyodata_nfmplt_9_smoke <- ggplot(Inyodata_NFM9_smoke, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components9 (smoke day only)")
+
+Inyodata_NFM10_smoke <- subset(Inyodata_H_long_smoke, Chemical == '10')
+# Plot
+Inyodata_nfmplt_10_smoke <- ggplot(Inyodata_NFM10_smoke, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components10 (smoke day only)")
+```
+
+```{r, eval=TRUE, echo = F, fig.height=15, fig.width=20}
+grid.arrange(Inyodata_nfmplt_1_smoke, Inyodata_nfmplt_2_smoke, Inyodata_nfmplt_3_smoke, Inyodata_nfmplt_4_smoke, Inyodata_nfmplt_5_smoke,  Inyodata_nfmplt_6_smoke, ncol=2)
+```
+
+
+
+
+## Inyodata nosmoke only
+
+### use plot the reconstruction error for NMF to find the best rank
+```{r, eval=TRUE, echo = T, include=FALSE}
+# normalize_chemical <- sapply(Inyodata_smoke_day[chemicals], normalize_column) #normalize the chemicals
+Inyodata_nmf_matrix_smoke <- as.matrix(Inyodata_nosmoke_day_nmf)
+# Prepare variables to store results
+components <- 2:20
+errors_smoke <- numeric(length(components))
+
+# Loop over the number of components
+for (n in components) {
+  nmf_result_smoke <- nmf(Inyodata_nmf_matrix_smoke, rank = n, method = "KL", seed='nndsvd')
+  reconstruction_smoke <- nmf_result_smoke@fit@W %*% nmf_result_smoke@fit@H
+  error_smoke <- norm(Inyodata_nmf_matrix_smoke - reconstruction_smoke, type = "F")
+  errors_smoke[n - 1] <- error_smoke
+}
+
+```
+
+```{r, eval=TRUE, echo = F}
+# Plot the errors
+df <- data.frame(components, errors_smoke)
+ggplot(df, aes(x = components, y = errors_smoke)) +
+  geom_line() +
+  geom_point() +
+  theme_minimal() +
+  geom_text(aes(label = sprintf("%.3f", errors_smoke)), color = "blue", size = 3, vjust = -0.5) +
+  labs(title = "NMF Reconstruction Error vs. Number of Components (smoke only)",
+       x = "Number of Components", y = "Reconstruction Error")
+```
+
+```{r, eval=TRUE, echo = F}
+Inyodata_smoke_rankerror6 <-  df[5,2]
+Inyodata_smoke_rankerror6
+```
+
+### choose 6
+```{r, eval=TRUE, echo = T, include=FALSE}
+# Apply NMF
+Inyodata_nmf_result_smoke <- nmf(Inyodata_nosmoke_day_nmf, rank = 6, method = "KL", seed='nndsvd')
+
+# Examine the basis matrix (W)
+Inyodata_basis_matrix_smoke <- basis(Inyodata_nmf_result_smoke)
+
+# Examine the coefficient matrix (H)
+Inyodata_coef_matrix_smoke <- coef(Inyodata_nmf_result_smoke)
+
+```
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+# Convert H to a data frame for ggplot
+Inyodata_H_df_smoke <- as.data.frame(Inyodata_coef_matrix_smoke)
+# Add a column for chemicals
+Inyodata_H_df_smoke$Chemical <- rownames(Inyodata_H_df_smoke)
+
+# Reshape data to long format
+Inyodata_H_long_smoke <- pivot_longer(Inyodata_H_df_smoke, cols = -Chemical, names_to = "Component", values_to = "Contribution")
+
+Inyodata_NFM1_smoke <- subset(Inyodata_H_long_smoke, Chemical == '1')
+# Plot
+Inyodata_nfmplt_1_smoke <- ggplot(Inyodata_NFM1_smoke, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "orange") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 4, nudge_y = 0.1) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components1 (non smoke day only)")+
+  theme(
+  text = element_text(size = 14), # Base text size for all text elements
+  axis.title = element_text(size = 16), # Size of axis titles
+  axis.text = element_text(size = 12), # Size of axis text (tick labels)
+  plot.title = element_text(size = 18) # Size of the plot title
+)
+```
+```{r, eval=TRUE, echo = T, include=FALSE}
+Inyodata_NFM2_smoke <- subset(Inyodata_H_long_smoke, Chemical == '2')
+# Plot
+Inyodata_nfmplt_2_smoke <- ggplot(Inyodata_NFM2_smoke, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "orange") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 4, nudge_y = 0.1) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components2 (non smoke day only)")+
+  theme(
+  text = element_text(size = 14), # Base text size for all text elements
+  axis.title = element_text(size = 16), # Size of axis titles
+  axis.text = element_text(size = 12), # Size of axis text (tick labels)
+  plot.title = element_text(size = 18) # Size of the plot title
+)
+
+Inyodata_NFM3_smoke <- subset(Inyodata_H_long_smoke, Chemical == '3')
+# Plot
+Inyodata_nfmplt_3_smoke <- ggplot(Inyodata_NFM3_smoke, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "orange") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 4, nudge_y = 0.1) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components3 (non smoke day only)")+
+  theme(
+  text = element_text(size = 14), # Base text size for all text elements
+  axis.title = element_text(size = 16), # Size of axis titles
+  axis.text = element_text(size = 12), # Size of axis text (tick labels)
+  plot.title = element_text(size = 18) # Size of the plot title
+)
+
+Inyodata_NFM4_smoke <- subset(Inyodata_H_long_smoke, Chemical == '4')
+# Plot
+Inyodata_nfmplt_4_smoke <- ggplot(Inyodata_NFM4_smoke, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "orange") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 4, nudge_y = 0.1) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components4 (non smoke day only)")+
+  theme(
+  text = element_text(size = 14), # Base text size for all text elements
+  axis.title = element_text(size = 16), # Size of axis titles
+  axis.text = element_text(size = 12), # Size of axis text (tick labels)
+  plot.title = element_text(size = 18) # Size of the plot title
+)
+
+Inyodata_NFM5_smoke <- subset(Inyodata_H_long_smoke, Chemical == '5')
+# Plot
+Inyodata_nfmplt_5_smoke <- ggplot(Inyodata_NFM5_smoke, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components5 (smoke day only)")
+
+Inyodata_NFM6_smoke <- subset(Inyodata_H_long_smoke, Chemical == '6')
+# Plot
+Inyodata_nfmplt_6_smoke <- ggplot(Inyodata_NFM6_smoke, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components6 (smoke day only)")
+
+Inyodata_NFM7_smoke <- subset(Inyodata_H_long_smoke, Chemical == '7')
+# Plot
+Inyodata_nfmplt_7_smoke <- ggplot(Inyodata_NFM7_smoke, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components7 (smoke day only)")
+
+Inyodata_NFM8_smoke <- subset(Inyodata_H_long_smoke, Chemical == '8')
+# Plot
+Inyodata_nfmplt_8_smoke <- ggplot(Inyodata_NFM8_smoke, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components8 (smoke day only)")
+
+Inyodata_NFM9_smoke <- subset(Inyodata_H_long_smoke, Chemical == '9')
+# Plot
+Inyodata_nfmplt_9_smoke <- ggplot(Inyodata_NFM9_smoke, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components9 (smoke day only)")
+
+Inyodata_NFM10_smoke <- subset(Inyodata_H_long_smoke, Chemical == '10')
+# Plot
+Inyodata_nfmplt_10_smoke <- ggplot(Inyodata_NFM10_smoke, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components10 (smoke day only)")
+```
+
+```{r, eval=TRUE, echo = F, fig.height=15, fig.width=20}
+grid.arrange(Inyodata_nfmplt_1_smoke, Inyodata_nfmplt_2_smoke, Inyodata_nfmplt_3_smoke, Inyodata_nfmplt_4_smoke, Inyodata_nfmplt_5_smoke,  Inyodata_nfmplt_6_smoke, ncol=2)
+```
+
+
+
+## Fresno
+
+### use plot the reconstruction error for NMF to find the best rank
+```{r, eval=TRUE, echo = T, include=FALSE}
+Fresno_nmf_matrix <- as.matrix(Fresno_nmf)
+# Prepare variables to store results
+components <- 2:20
+errors <- numeric(length(components))
+
+# Loop over the number of components
+for (n in components) {
+  nmf_result <- nmf(Fresno_nmf_matrix, rank = n, method = "KL", seed='nndsvd')
+  reconstruction <- nmf_result@fit@W %*% nmf_result@fit@H
+  error <- norm(Fresno_nmf_matrix - reconstruction, type = "F")
+  errors[n-1] <- error
+}
+
+
+```
+
+```{r, eval=TRUE, echo = F}
+# Plot the errors
+df <- data.frame(components, errors)
+ggplot(df, aes(x = components, y = errors)) +
+  geom_line() +
+  geom_point() +
+  theme_minimal() +
+  geom_text(aes(label = sprintf("%.3f", errors)), color = "blue", size = 3, vjust = -0.5) +
+  labs(title = "NMF Reconstruction Error vs. Number of Components",
+       x = "Number of Components", y = "Reconstruction Error")
+```
+
+
+
+```{r, eval=TRUE, echo = F}
+Fresno_rankerror6 <-  df[5,2]
+Fresno_rankerror6
+```
+
+### choose 6
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+# Apply NMF
+Fresno_nmf_result <- nmf(Fresno_nmf, rank = 6, method = "KL", seed='nndsvd')
+
+# Examine the basis matrix (W)
+Fresno_basis_matrix <- basis(Fresno_nmf_result)
+print(Fresno_basis_matrix)
+
+# Examine the coefficient matrix (H)
+Fresno_coef_matrix <- coef(Fresno_nmf_result)
+print(Fresno_coef_matrix)
+
+# Optionally, visualize the results
+par(mfrow = c(1, 2))
+# Basis matrix
+image(Fresno_basis_matrix, main = "Basis Matrix (W)")
+# Coefficient matrix
+image(Fresno_coef_matrix, main = "Coefficient Matrix (H)")
+
+```
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+# Convert H to a data frame for ggplot
+Fresno_H_df <- as.data.frame(Fresno_coef_matrix)
+# Add a column for chemicals
+Fresno_H_df$Chemical <- rownames(Fresno_H_df)
+
+# Reshape data to long format
+Fresno_H_long <- pivot_longer(Fresno_H_df, cols = -Chemical, names_to = "Component", values_to = "Contribution")
+
+Fresno_NFM1 <- subset(Fresno_H_long, Chemical == '1')
+# Plot
+Fresno_nfmplt_1 <- ggplot(Fresno_NFM1, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components1")
+Fresno_nfmplt_1
+```
+```{r, eval=TRUE, echo = T, include=FALSE}
+Fresno_NFM2 <- subset(Fresno_H_long, Chemical == '2')
+# Plot
+Fresno_nfmplt_2 <- ggplot(Fresno_NFM2, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components2")
+
+Fresno_NFM3 <- subset(Fresno_H_long, Chemical == '3')
+# Plot
+Fresno_nfmplt_3 <- ggplot(Fresno_NFM3, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components3")
+
+Fresno_NFM4 <- subset(Fresno_H_long, Chemical == '4')
+# Plot
+Fresno_nfmplt_4 <- ggplot(Fresno_NFM4, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components4")
+
+Fresno_NFM5 <- subset(Fresno_H_long, Chemical == '5')
+# Plot
+Fresno_nfmplt_5 <- ggplot(Fresno_NFM5, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components5")
+
+Fresno_NFM6 <- subset(Fresno_H_long, Chemical == '6')
+# Plot
+Fresno_nfmplt_6 <- ggplot(Fresno_NFM6, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components6")
+
+Fresno_NFM7 <- subset(Fresno_H_long, Chemical == '7')
+# Plot
+Fresno_nfmplt_7 <- ggplot(Fresno_NFM7, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components7")
+
+Fresno_NFM8<- subset(Fresno_H_long, Chemical == '8')
+# Plot
+Fresno_nfmplt_8 <- ggplot(Fresno_NFM8, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components8")
+
+Fresno_NFM9 <- subset(Fresno_H_long, Chemical == '9')
+# Plot
+Fresno_nfmplt_9 <- ggplot(Fresno_NFM9, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components9")
+
+Fresno_NFM10 <- subset(Fresno_H_long, Chemical == '10')
+# Plot
+Fresno_nfmplt_10 <- ggplot(Fresno_NFM10, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components10")
+```
+
+```{r, eval=TRUE, echo = F, fig.height=15, fig.width=20}
+grid.arrange(Fresno_nfmplt_1, Fresno_nfmplt_2, Fresno_nfmplt_3, Fresno_nfmplt_4, Fresno_nfmplt_5,  Fresno_nfmplt_6, ncol=2)
+```
+
+
+
+## Fresno smoke only
+
+### use plot the reconstruction error for NMF to find the best rank
+```{r, eval=TRUE, echo = T, include=FALSE}
+Fresno_nmf_matrix_smoke <- as.matrix(Fresno_smoke_day_nmf)
+# Prepare variables to store results
+components <- 2:20
+errors_smoke <- numeric(length(components))
+
+# Loop over the number of components
+for (n in components) {
+  nmf_result_smoke <- nmf(Fresno_nmf_matrix_smoke, rank = n,  method = "KL", seed='nndsvd')
+  reconstruction_smoke <- nmf_result_smoke@fit@W %*% nmf_result_smoke@fit@H
+  error_smoke <- norm(Fresno_nmf_matrix_smoke - reconstruction_smoke, type = "F")
+  errors_smoke[n-1] <- error_smoke
+}
+```
+
+```{r, eval=TRUE, echo = F}
+# Plot the errors
+df <- data.frame(components, errors_smoke)
+ggplot(df, aes(x = components, y = errors_smoke)) +
+  geom_line() +
+  geom_point() +
+  theme_minimal() +
+  geom_text(aes(label = sprintf("%.3f", errors_smoke)), color = "blue", size = 3, vjust = -0.5) +
+  labs(title = "NMF Reconstruction Error vs. Number of Components (smoke only)",
+       x = "Number of Components", y = "Reconstruction Error")
+
+```
+
+
+
+```{r, eval=TRUE, echo = F}
+Fresno_smoke_rankerror6 <-  df[6,2]
+Fresno_smoke_rankerror6
+```
+
+### choose 6
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+# Apply NMF
+Fresno_nmf_result_smoke <- nmf(Fresno_smoke_day_nmf, rank = 6, method = "KL", seed='nndsvd')
+
+# Examine the basis matrix (W)
+Fresno_basis_matrix_smoke <- basis(Fresno_nmf_result_smoke)
+
+# Examine the coefficient matrix (H)
+Fresno_coef_matrix_smoke <- coef(Fresno_nmf_result_smoke)
+
+```
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+# Convert H to a data frame for ggplot
+Fresno_H_df_smoke <- as.data.frame(Fresno_coef_matrix_smoke)
+# Add a column for chemicals
+Fresno_H_df_smoke$Chemical <- rownames(Fresno_H_df_smoke)
+
+# Reshape data to long format
+Fresno_H_long_smoke <- pivot_longer(Fresno_H_df_smoke, cols = -Chemical, names_to = "Component", values_to = "Contribution")
+
+Fresno_NFM1_smoke <- subset(Fresno_H_long_smoke, Chemical == '1')
+# Plot
+Fresno_nfmplt_1_smoke <- ggplot(Fresno_NFM1_smoke, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components1 (smoke day only)")
+```
+```{r, eval=TRUE, echo = T, include=FALSE}
+Fresno_NFM2_smoke <- subset(Fresno_H_long_smoke, Chemical == '2')
+# Plot
+Fresno_nfmplt_2_smoke <- ggplot(Fresno_NFM2_smoke, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components2 (smoke day only)")
+
+Fresno_NFM3_smoke <- subset(Fresno_H_long_smoke, Chemical == '3')
+# Plot
+Fresno_nfmplt_3_smoke <- ggplot(Fresno_NFM3_smoke, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components3 (smoke day only)")
+
+Fresno_NFM4_smoke <- subset(Fresno_H_long_smoke, Chemical == '4')
+# Plot
+Fresno_nfmplt_4_smoke <- ggplot(Fresno_NFM4_smoke, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components4 (smoke day only)")
+
+Fresno_NFM5_smoke <- subset(Fresno_H_long_smoke, Chemical == '5')
+# Plot
+Fresno_nfmplt_5_smoke <- ggplot(Fresno_NFM5_smoke, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components5 (smoke day only)")
+
+Fresno_NFM6_smoke <- subset(Fresno_H_long_smoke, Chemical == '6')
+# Plot
+Fresno_nfmplt_6_smoke <- ggplot(Fresno_NFM6_smoke, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components6 (smoke day only)")
+
+Fresno_NFM7_smoke <- subset(Fresno_H_long_smoke, Chemical == '7')
+# Plot
+Fresno_nfmplt_7_smoke <- ggplot(Fresno_NFM7_smoke, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components7 (smoke day only)")
+
+Fresno_NFM8_smoke <- subset(Fresno_H_long_smoke, Chemical == '8')
+# Plot
+Fresno_nfmplt_8_smoke <- ggplot(Fresno_NFM8_smoke, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components8 (smoke day only)")
+
+Fresno_NFM9_smoke <- subset(Fresno_H_long_smoke, Chemical == '9')
+# Plot
+Fresno_nfmplt_9_smoke <- ggplot(Fresno_NFM9_smoke, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components9 (smoke day only)")
+
+Fresno_NFM10_smoke <- subset(Fresno_H_long_smoke, Chemical == '10')
+# Plot
+Fresno_nfmplt_10_smoke <- ggplot(Fresno_NFM10_smoke, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components10 (smoke day only)")
+```
+
+```{r, eval=TRUE, echo = F, fig.height=15, fig.width=20}
+grid.arrange(Fresno_nfmplt_1_smoke, Fresno_nfmplt_2_smoke, Fresno_nfmplt_3_smoke, Fresno_nfmplt_4_smoke, Fresno_nfmplt_5_smoke,  Fresno_nfmplt_6_smoke, ncol=2)
+```
+
+
+## Rubidoux
+
+
+
+### use plot the reconstruction error for NMF to find the best rank
+```{r, eval=TRUE, echo = T, include=FALSE}
+Rubidoux_nmf_matrix <- as.matrix(Rubidoux_nmf)
+# Prepare variables to store results
+components <- 2:20
+errors <- numeric(length(components))
+
+# Loop over the number of components
+for (n in components) {
+  nmf_result <- nmf(Rubidoux_nmf_matrix, rank = n,  method = "KL", seed='nndsvd')
+  reconstruction <- nmf_result@fit@W %*% nmf_result@fit@H
+  error <- norm(Rubidoux_nmf_matrix - reconstruction, type = "F")
+  errors[n-1] <- error
+}
+
+```
+
+```{r, eval=TRUE, echo = F}
+# Plot the errors
+df <- data.frame(components, errors)
+ggplot(df, aes(x = components, y = errors)) +
+  geom_line() +
+  geom_point() +
+  theme_minimal() +
+  geom_text(aes(label = sprintf("%.3f", errors)), color = "blue", size = 3, vjust = -0.5) +
+  labs(title = "NMF Reconstruction Error vs. Number of Components",
+       x = "Number of Components", y = "Reconstruction Error")
+
+```
+
+
+
+```{r, eval=TRUE, echo = F}
+Rubidoux_rankerror6 <-  df[5,2]
+Rubidoux_rankerror6
+```
+
+### choose 6
+```{r, eval=TRUE, echo = T, include=FALSE}
+# Apply NMF
+Rubidoux_nmf_result <- nmf(Rubidoux_nmf, rank = 6,  method = "KL", seed='nndsvd')
+
+# Examine the basis matrix (W)
+Rubidoux_basis_matrix <- basis(Rubidoux_nmf_result)
+print(Rubidoux_basis_matrix)
+
+# Examine the coefficient matrix (H)
+Rubidoux_coef_matrix <- coef(Rubidoux_nmf_result)
+print(Rubidoux_coef_matrix)
+
+# Optionally, visualize the results
+par(mfrow = c(1, 2))
+# Basis matrix
+image(Rubidoux_basis_matrix, main = "Basis Matrix (W)")
+# Coefficient matrix
+image(Rubidoux_coef_matrix, main = "Coefficient Matrix (H)")
+
+```
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+# Convert H to a data frame for ggplot
+Rubidoux_H_df <- as.data.frame(Rubidoux_coef_matrix)
+# Add a column for chemicals
+Rubidoux_H_df$Chemical <- rownames(Rubidoux_H_df)
+
+# Reshape data to long format
+Rubidoux_H_long <- pivot_longer(Rubidoux_H_df, cols = -Chemical, names_to = "Component", values_to = "Contribution")
+
+Rubidoux_NFM1 <- subset(Rubidoux_H_long, Chemical == '1')
+# Plot
+Rubidoux_nfmplt_1 <- ggplot(Rubidoux_NFM1, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components1")
+Rubidoux_nfmplt_1
+```
+```{r, eval=TRUE, echo = T, include=FALSE}
+Rubidoux_NFM2 <- subset(Rubidoux_H_long, Chemical == '2')
+# Plot
+Rubidoux_nfmplt_2 <- ggplot(Rubidoux_NFM2, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components2")
+
+Rubidoux_NFM3 <- subset(Rubidoux_H_long, Chemical == '3')
+# Plot
+Rubidoux_nfmplt_3 <- ggplot(Rubidoux_NFM3, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components3")
+
+Rubidoux_NFM4 <- subset(Rubidoux_H_long, Chemical == '4')
+# Plot
+Rubidoux_nfmplt_4 <- ggplot(Rubidoux_NFM4, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components4")
+
+Rubidoux_NFM5 <- subset(Rubidoux_H_long, Chemical == '5')
+# Plot
+Rubidoux_nfmplt_5 <- ggplot(Rubidoux_NFM5, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components5")
+
+Rubidoux_NFM6 <- subset(Rubidoux_H_long, Chemical == '6')
+# Plot
+Rubidoux_nfmplt_6 <- ggplot(Rubidoux_NFM6, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components6")
+
+Rubidoux_NFM7 <- subset(Rubidoux_H_long, Chemical == '7')
+# Plot
+Rubidoux_nfmplt_7 <- ggplot(Rubidoux_NFM7, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components7")
+
+Rubidoux_NFM8<- subset(Rubidoux_H_long, Chemical == '8')
+# Plot
+Rubidoux_nfmplt_8 <- ggplot(Rubidoux_NFM8, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components8")
+
+Rubidoux_NFM9 <- subset(Rubidoux_H_long, Chemical == '9')
+# Plot
+Rubidoux_nfmplt_9 <- ggplot(Rubidoux_NFM9, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components9")
+
+Rubidoux_NFM10 <- subset(Rubidoux_H_long, Chemical == '10')
+# Plot
+Rubidoux_nfmplt_10 <- ggplot(Rubidoux_NFM10, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components10")
+```
+
+```{r fig.height=15, fig.width=20}
+grid.arrange(Rubidoux_nfmplt_1, Rubidoux_nfmplt_2, Rubidoux_nfmplt_3, Rubidoux_nfmplt_4, Rubidoux_nfmplt_5,  Rubidoux_nfmplt_6, ncol=2)
+```
+
+
+## we don't have data for Rubidoux smoke only 
+
+## Seattle
+
+### use plot the reconstruction error for NMF to find the best rank
+```{r, eval=TRUE, echo = T, include=FALSE}
+Seattle_nmf_matrix <- as.matrix(Seattle_nmf)
+# Prepare variables to store results
+components <- 2:20
+errors <- numeric(length(components))
+
+# Loop over the number of components
+for (n in components) {
+  nmf_result <- nmf(Seattle_nmf_matrix, rank = n,  method = "KL", seed='nndsvd')
+  reconstruction <- nmf_result@fit@W %*% nmf_result@fit@H
+  error <- norm(Seattle_nmf_matrix - reconstruction, type = "F")
+  errors[n -1] <- error
+}
+
+```
+
+
+```{r, eval=TRUE, echo = F}
+# Plot the errors
+df <- data.frame(components, errors)
+ggplot(df, aes(x = components, y = errors)) +
+  geom_line() +
+  geom_point() +
+  theme_minimal() +
+  geom_text(aes(label = sprintf("%.3f", errors)), color = "blue", size = 3, vjust = -0.5) +
+  labs(title = "NMF Reconstruction Error vs. Number of Components",
+       x = "Number of Components", y = "Reconstruction Error")
+
+```
+
+```{r, eval=TRUE, echo = F}
+Seattle_rankerror6 <-  df[5,2]
+Seattle_rankerror6
+```
+
+### choose 6
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+# Apply NMF
+Seattle_nmf_result <- nmf(Seattle_nmf, rank = 6,  method = "KL", seed='nndsvd')
+
+# Examine the basis matrix (W)
+Seattle_basis_matrix <- basis(Seattle_nmf_result)
+print(Seattle_basis_matrix)
+
+# Examine the coefficient matrix (H)
+Seattle_coef_matrix <- coef(Seattle_nmf_result)
+print(Seattle_coef_matrix)
+
+# Optionally, visualize the results
+par(mfrow = c(1, 2))
+# Basis matrix
+image(Seattle_basis_matrix, main = "Basis Matrix (W)")
+# Coefficient matrix
+image(Seattle_coef_matrix, main = "Coefficient Matrix (H)")
+
+```
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+# Convert H to a data frame for ggplot
+Seattle_H_df <- as.data.frame(Seattle_coef_matrix)
+# Add a column for chemicals
+Seattle_H_df$Chemical <- rownames(Seattle_H_df)
+
+# Reshape data to long format
+Seattle_H_long <- pivot_longer(Seattle_H_df, cols = -Chemical, names_to = "Component", values_to = "Contribution")
+
+Seattle_NFM1 <- subset(Seattle_H_long, Chemical == '1')
+# Plot
+Seattle_nfmplt_1 <- ggplot(Seattle_NFM1, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components1")
+Seattle_nfmplt_1
+```
+```{r, eval=TRUE, echo = T, include=FALSE}
+Seattle_NFM2 <- subset(Seattle_H_long, Chemical == '2')
+# Plot
+Seattle_nfmplt_2 <- ggplot(Seattle_NFM2, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components2")
+
+Seattle_NFM3 <- subset(Seattle_H_long, Chemical == '3')
+# Plot
+Seattle_nfmplt_3 <- ggplot(Seattle_NFM3, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components3")
+
+Seattle_NFM4 <- subset(Seattle_H_long, Chemical == '4')
+# Plot
+Seattle_nfmplt_4 <- ggplot(Seattle_NFM4, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components4")
+
+Seattle_NFM5 <- subset(Seattle_H_long, Chemical == '5')
+# Plot
+Seattle_nfmplt_5 <- ggplot(Seattle_NFM5, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components5")
+
+Seattle_NFM6 <- subset(Seattle_H_long, Chemical == '6')
+# Plot
+Seattle_nfmplt_6 <- ggplot(Seattle_NFM6, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components6")
+
+Seattle_NFM7 <- subset(Seattle_H_long, Chemical == '7')
+# Plot
+Seattle_nfmplt_7 <- ggplot(Seattle_NFM7, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components7")
+
+Seattle_NFM8<- subset(Seattle_H_long, Chemical == '8')
+# Plot
+Seattle_nfmplt_8 <- ggplot(Seattle_NFM8, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components8")
+
+Seattle_NFM9 <- subset(Seattle_H_long, Chemical == '9')
+# Plot
+Seattle_nfmplt_9 <- ggplot(Seattle_NFM9, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components9")
+
+Seattle_NFM10 <- subset(Seattle_H_long, Chemical == '10')
+# Plot
+Seattle_nfmplt_10 <- ggplot(Seattle_NFM10, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components10")
+```
+
+```{r, eval=TRUE, echo = F, fig.height=15, fig.width=20}
+grid.arrange(Seattle_nfmplt_1, Seattle_nfmplt_2, Seattle_nfmplt_3, Seattle_nfmplt_4, Seattle_nfmplt_5,  Seattle_nfmplt_6, ncol=2)
+```
+
+
+
+## Seattle smoke only
+
+### use plot the reconstruction error for NMF to find the best rank
+```{r, eval=TRUE, echo = T, include=FALSE}
+Seattle_nmf_matrix_smoke <- as.matrix(Seattle_smoke_day_nmf)
+# Prepare variables to store results
+components <- 2:20
+errors_smoke <- numeric(length(components))
+
+# Loop over the number of components
+for (n in components) {
+  nmf_result_smoke <- nmf(Seattle_nmf_matrix_smoke, rank = n,  method = "KL", seed='nndsvd')
+  reconstruction_smoke <- nmf_result_smoke@fit@W %*% nmf_result_smoke@fit@H
+  error_smoke <- norm(Seattle_nmf_matrix_smoke - reconstruction_smoke, type = "F")
+  errors_smoke[n-1] <- error_smoke
+}
+```
+
+```{r, eval=TRUE, echo = F}
+# Plot the errors
+df <- data.frame(components, errors_smoke)
+ggplot(df, aes(x = components, y = errors_smoke)) +
+  geom_line() +
+  geom_point() +
+  theme_minimal() +
+  geom_text(aes(label = sprintf("%.3f", errors_smoke)), color = "blue", size = 3, vjust = -0.5) +
+  labs(title = "NMF Reconstruction Error vs. Number of Components (smoke only)",
+       x = "Number of Components", y = "Reconstruction Error")
+
+```
+
+
+```{r, eval=TRUE, echo = F}
+Seattle_smoke_rankerror6 <-  df[5,2]
+Seattle_smoke_rankerror6
+```
+
+
+
+### choose 6
+```{r, eval=TRUE, echo = T, include=FALSE}
+# Apply NMF
+Seattle_nmf_result_smoke <- nmf(Seattle_smoke_day_nmf, rank = 6,  method = "KL", seed='nndsvd')
+
+# Examine the basis matrix (W)
+Seattle_basis_matrix_smoke <- basis(Seattle_nmf_result_smoke)
+
+# Examine the coefficient matrix (H)
+Seattle_coef_matrix_smoke <- coef(Seattle_nmf_result_smoke)
+
+```
+
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+# Convert H to a data frame for ggplot
+Seattle_H_df_smoke <- as.data.frame(Seattle_coef_matrix_smoke)
+# Add a column for chemicals
+Seattle_H_df_smoke$Chemical <- rownames(Seattle_H_df_smoke)
+
+# Reshape data to long format
+Seattle_H_long_smoke <- pivot_longer(Seattle_H_df_smoke, cols = -Chemical, names_to = "Component", values_to = "Contribution")
+
+Seattle_NFM1_smoke <- subset(Seattle_H_long_smoke, Chemical == '1')
+# Plot
+Seattle_nfmplt_1_smoke <- ggplot(Seattle_NFM1_smoke, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components1 (smoke day only)")
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+Seattle_NFM2_smoke <- subset(Seattle_H_long_smoke, Chemical == '2')
+# Plot
+Seattle_nfmplt_2_smoke <- ggplot(Seattle_NFM2_smoke, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components2 (smoke day only)")
+
+Seattle_NFM3_smoke <- subset(Seattle_H_long_smoke, Chemical == '3')
+# Plot
+Seattle_nfmplt_3_smoke <- ggplot(Seattle_NFM3_smoke, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components3 (smoke day only)")
+
+Seattle_NFM4_smoke <- subset(Seattle_H_long_smoke, Chemical == '4')
+# Plot
+Seattle_nfmplt_4_smoke <- ggplot(Seattle_NFM4_smoke, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components4 (smoke day only)")
+
+Seattle_NFM5_smoke <- subset(Seattle_H_long_smoke, Chemical == '5')
+# Plot
+Seattle_nfmplt_5_smoke <- ggplot(Seattle_NFM5_smoke, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components5 (smoke day only)")
+
+Seattle_NFM6_smoke <- subset(Seattle_H_long_smoke, Chemical == '6')
+# Plot
+Seattle_nfmplt_6_smoke <- ggplot(Seattle_NFM6_smoke, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components6 (smoke day only)")
+
+Seattle_NFM7_smoke <- subset(Seattle_H_long_smoke, Chemical == '7')
+# Plot
+Seattle_nfmplt_7_smoke <- ggplot(Seattle_NFM7_smoke, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components7 (smoke day only)")
+
+Seattle_NFM8_smoke <- subset(Seattle_H_long_smoke, Chemical == '8')
+# Plot
+Seattle_nfmplt_8_smoke <- ggplot(Seattle_NFM8_smoke, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components8 (smoke day only)")
+
+Seattle_NFM9_smoke <- subset(Seattle_H_long_smoke, Chemical == '9')
+# Plot
+Seattle_nfmplt_9_smoke <- ggplot(Seattle_NFM9_smoke, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components9 (smoke day only)")
+
+Seattle_NFM10_smoke <- subset(Seattle_H_long_smoke, Chemical == '10')
+# Plot
+Seattle_nfmplt_10_smoke <- ggplot(Seattle_NFM10_smoke, aes(x = Component, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "lightyellow") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.5f", Contribution)), color = "blue", size = 2) +
+  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components10 (smoke day only)")
+```
+
+```{r, eval=TRUE, echo = F, fig.height=15, fig.width=20}
+grid.arrange(Seattle_nfmplt_1_smoke, Seattle_nfmplt_2_smoke, Seattle_nfmplt_3_smoke, Seattle_nfmplt_4_smoke, Seattle_nfmplt_5_smoke,  Seattle_nfmplt_6_smoke, ncol=2)
+```
+
+# compare different sites error with rank 6
+```{r, eval=TRUE, echo = T, include=FALSE}
+name_site <- c("Inyo", "Inyo_smoke", "Fresno", "Fresno_smoke", "Rubidoux", "Seattle", "Seattle_smoke")
+rank6error <- c(Inyodata_rankerror6, Inyodata_smoke_rankerror6, Fresno_rankerror6, Fresno_smoke_rankerror6, Rubidoux_rankerror6, Seattle_rankerror6,Seattle_smoke_rankerror6)
+site_rows <- c(nrow(Inyodata_nmf), nrow(Inyodata_smoke_day_nmf), nrow(Fresno_nmf), nrow(Fresno_smoke_day_nmf), nrow(Rubidoux_nmf), nrow(Seattle_nmf), nrow(Seattle_smoke_day_nmf))
+error_table <- data.frame(Site = name_site, rank6error = rank6error, rows = site_rows)
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+site_rows <- c(nrow(Inyodata_nmf), nrow(Inyodata_smoke_day_nmf), nrow(Fresno_nmf), nrow(Fresno_smoke_day_nmf), nrow(Rubidoux_nmf), nrow(Seattle_nmf), nrow(Seattle_smoke_day_nmf))
+```
+
+```{r}
+site_rows
+```
+
+
+
+```{r, eval=TRUE, echo = F}
+error_table
+```
+### The error is the difference between the original matrix and the matrix reconstructed after multiplying W and H. The error = Frobenius norm(Euclidean norm) for difference between the original matrix,  
+
+## Summary of Inyodata
+
+```{r, eval=TRUE, echo = F}
+summary(Inyodata_nmf)
+```
+
+```{r, eval=TRUE, echo = F, fig.height=10, fig.width=14}
+boxplot(Inyodata_nmf)
+
+# Alternatively, if you want to create individual box plots for each variable with more control:
+par(mfrow = c(1, ncol(Inyodata_nmf))) # This sets up the plotting area to display multiple plots in one row; adjust as needed.
+mtext("Inyodata normalized data box plot for each chemical", outer = TRUE, cex = 1.5, line = -4, font = 4)
+```
+
+## Summary of Inyo smoke data
+```{r, eval=TRUE, echo = F}
+summary(Inyodata_smoke_day_nmf)
+```
+
+```{r, eval=TRUE, echo = F, fig.height=10, fig.width=14}
+boxplot(Inyodata_smoke_day_nmf)
+
+# Alternatively, if you want to create individual box plots for each variable with more control:
+par(mfrow = c(1, ncol(Inyodata_smoke_day_nmf))) # This sets up the plotting area to display multiple plots in one row; adjust as needed.
+mtext("Inyo Smoke data normalized data box plot for each chemical", outer = TRUE, cex = 1.5, line = -4, font = 4)
+```
+
+## Summary of Fresno data
+```{r, eval=TRUE, echo = F}
+
+summary(Fresno_nmf)
+
+```
+
+```{r, eval=TRUE, echo = F, fig.height=10, fig.width=14}
+boxplot(Fresno_nmf)
+
+# Alternatively, if you want to create individual box plots for each variable with more control:
+par(mfrow = c(1, ncol(Fresno_nmf))) # This sets up the plotting area to display multiple plots in one row; adjust as needed.
+mtext("Fresno data normalized data box plot for each chemical", outer = TRUE, cex = 1.5, line = -4, font = 2)
+```
+
+## Summary of Fresno smoke data
+```{r, eval=TRUE, echo = F}
+
+summary(Fresno_smoke_day_nmf)
+
+```
+
+```{r, eval=TRUE, echo = F, fig.height=10, fig.width=14}
+boxplot(Fresno_smoke_day_nmf)
+
+# Alternatively, if you want to create individual box plots for each variable with more control:
+par(mfrow = c(1, ncol(Fresno_smoke_day_nmf))) # This sets up the plotting area to display multiple plots in one row; adjust as needed.
+mtext("Fresno Smoke data normalized data box plot for each chemical", outer = TRUE, cex = 1.5, line = -4, font = 2)
+```
+
+
+
+## Summary of Rubidoux data
+```{r, eval=TRUE, echo = F}
+
+summary(Rubidoux_nmf)
+
+```
+
+```{r, eval=TRUE, echo = F, fig.height=10, fig.width=14}
+boxplot(Rubidoux_nmf)
+
+# Alternatively, if you want to create individual box plots for each variable with more control:
+par(mfrow = c(1, ncol(Rubidoux_nmf))) # This sets up the plotting area to display multiple plots in one row; adjust as needed.
+mtext("Rubidoux data normalized data box plot for each chemical", outer = TRUE, cex = 1.5, line = -4, font = 2)
+```
+
+
+
+## Summary of Seattle data
+```{r, eval=TRUE, echo = F}
+
+summary(Seattle_nmf)
+
+```
+
+```{r, eval=TRUE, echo = F, fig.height=10, fig.width=14}
+boxplot(Seattle_nmf)
+
+# Alternatively, if you want to create individual box plots for each variable with more control:
+par(mfrow = c(1, ncol(Seattle_nmf))) # This sets up the plotting area to display multiple plots in one row; adjust as needed.
+mtext("Seattle data normalized data box plot for each chemical", outer = TRUE, cex = 1.5, line = -4, font = 2)
+```
+
+
+
+## Summary of Seattle smoke data
+```{r, eval=TRUE, echo = F}
+
+summary(Seattle_smoke_day_nmf)
+
+```
+
+```{r, eval=TRUE, echo = F, fig.height=10, fig.width=14}
+boxplot(Seattle_smoke_day_nmf)
+
+# Alternatively, if you want to create individual box plots for each variable with more control:
+par(mfrow = c(1, ncol(Seattle_smoke_day_nmf))) # This sets up the plotting area to display multiple plots in one row; adjust as needed.
+mtext("Seattle Smoke data normalized data box plot for each chemical", outer = TRUE, cex = 1.5, line = -4, font = 2)
+```
+
+
+
+# compare correlationship between three different scaling 
+## Inyo 
+```{r, eval=TRUE, echo = F, fig.height=10, fig.width=14}
+inyo_plot  + inyo_plot_nom
+```
+
+## Inyo smoke 
+```{r, eval=TRUE, echo = F, fig.height=10, fig.width=14}
+inyo_smoke_plot + inyo_smoke_plot_sub + inyo_smoke_plot_nom
+```
+
+
+
+## Fresno 
+```{r, eval=TRUE, echo = F, fig.height=10, fig.width=14}
+Fresno_plot + Fresno_plot_sub + Fresno_plot_nom
+```
+## Fresno smoke 
+```{r, eval=TRUE, echo = F, fig.height=10, fig.width=14}
+Fresno_smoke_plot + Fresno_smoke_plot_sub + Fresno_smoke_plot_nom
+```
+
+
+## Seattle
+```{r, eval=TRUE, echo = F, fig.height=10, fig.width=14}
+Seattle_plot + Seattle_plot_sub + Seattle_plot_nom
+```
+## Seattle smoke 
+```{r, eval=TRUE, echo = F, fig.height=10, fig.width=14}
+Seattle_smoke_plot + Seattle_smoke_plot_sub + Seattle_smoke_plot_nom
+```
+
+### From the perspective of correlation, we can see that scaling does not change the individual relationship between each chemical and the smoke score. However, I cannot be certain that changing the scaling will not alter the weight of the chemicals in the smoke. As we observed last time, after normalization, the chemical with the maximum value changes. When we combine chemicals together, their coefficients may change due to the scale.
+
+
+
