@@ -13,13 +13,14 @@ library(lubridate)
 library(dagR)
 library(R.utils)
 library(data.table)
+library(leaflet)
 
 # Retrieve access token
 params <- list(
 client_id = 'eogdata_oidc',
 client_secret = '2677ad81-521b-4869-8480-6d05b9e57d48',
-username = 'williamqd.zhang@mail.utoronto.ca',
-password = 'MvvErN2M!WyYY@F',
+username = 'jerryp.wu@mail.utoronto.ca',
+password = 'MkBREu_D63qZ34g4',
 grant_type = 'password'
 )
 token_url <- 'https://eogauth.mines.edu/auth/realms/master/protocol/openid-connect/token'
@@ -45,7 +46,9 @@ vnf_pb_new <- data.frame(datetime = POSIXct(),
                           cloud_mask = integer(),
                           stringsAsFactors = FALSE)
 ```
+
 ```{r}
+# compute the coordinates for that is distance (km) away at given bearing.
 new.lon.lat <-
 function (lon, lat, bearing, distance) 
 {
@@ -72,6 +75,24 @@ west_bound <- new.lon.lat(source[2], source[1], 270, 100)
 east_bound <- new.lon.lat(source[2], source[1], 90, 100)
 ```
 
+```{r}
+# have a look at the boundaries
+bound_df <- rbind(east_bound, west_bound, south_bound, north_bound) %>%
+  as_tibble() %>%
+  set_names(c('lon', 'lat'))
+
+# load in data for 10km around the loving site
+# pb_vnf_20120301_20240423 <- readRDS('pb_vnf/pb-vnf-20120301-20240423.rds')
+
+bound_df %>%
+  leaflet() %>%
+  addTiles() %>%
+  addCircleMarkers(lng = ~lon, lat = ~lat) %>%
+  addCircleMarkers(lng = source[2], lat = source[1], color = 'red') # %>%
+  # addCircleMarkers(lng = pb_vnf_20120301_20240423$lon,
+  #                  lat = pb_vnf_20120301_20240423$lat,
+  #                  radius = 3, stroke = F, fillColor = 'black')
+```
 ```{r}
 start_date <- as.Date('2022-08-31')
 end_date <- as.Date('2023-03-01')
