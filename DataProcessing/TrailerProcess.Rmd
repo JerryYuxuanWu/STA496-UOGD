@@ -1,7 +1,7 @@
 ---
 title: "TrailerProcess"
 author: "William Zhang"
-date: "2023-09-28"
+date: "2024-09-04"
 output: html_document
 ---
 ```{r, include=FALSE}
@@ -22,78 +22,91 @@ library(mgcv)
 ## Trailer data
 ### Reading the datasets
 ```{r}
-# current version q3
-base_dir <- "../data/trailer03292024/"
-folders <- list.dirs(base_dir)
+# # current version q3
+# base_dir <- "../data/trailer03292024/"
+# folders <- list.dirs(base_dir)
+# 
+# for (folder in folders[-1]) {
+#     # Construct the file path
+#     file_dirs <- list.files(folder)
+#     for (file in file_dirs) {
+#       file_dir <- paste0(folder, '/', file)
+#       assign(paste0(file), read.csv(file_dir, skip=1, header=TRUE))
+#     }
+# }
 
-for (folder in folders[-1]) {
-    # Construct the file path
-    file_dirs <- list.files(folder)
-    for (file in file_dirs) {
-      file_dir <- paste0(folder, '/', file)
-      assign(paste0(file), read.csv(file_dir, skip=1, header=TRUE))
-    }
+filenames <- list.files('../data/VOC sampling window data 20240601/')
+filenames <- filenames[grep('.csv', filenames)]
+
+for (i in 1:length(filenames)) {
+  col_names <- read_csv(paste0('../data/VOC sampling window data 20240601/', filenames[i]), n_max = 0) %>% names()
+  units <- read_csv(paste0('../data/VOC sampling window data 20240601/', filenames[i]), skip = 1, n_max = 0) %>% names()
+  data <- read_csv(paste0('../data/VOC sampling window data 20240601/', filenames[i]), skip = 1)
+  colnames(data) <- col_names
+  data$time_utc <- as.character(data$time_utc)
+  
+  if (i == 1) {
+    hourly_data <- data
+    units_full <- tibble(var = col_names, unit = units)
+  } else {
+    hourly_data <- hourly_data %>%
+      left_join(data, join_by(time_utc))
+    units_full <- rbind(units_full, tibble(var = col_names[-1],
+                                           unit = units[-1]))
+  }
 }
 ```
 ### Data processing
 ```{r}
-pol_cat_names <- c("bc", "rd", "co", "nox", "o3", "met", "ch4", "h2s", "voc")
-
-my_mean <- function(x){
-  mean(x, na.rm=TRUE)
-}
-
-for (pol in pol_cat_names){
-  data_names <- objects(pattern = paste0('LNM_', pol))
-  
-  data_full <- tibble()
-  for (data_name in data_names) {
-    data_full <- rbind(data_full, get(data_name))
-  }
-  
-  # Convert to standard time format
-  data_full$std_time <- as_datetime(data_full$time, tz = "MST")
-  
-  data_full$time_hourly <- substr(format(data_full$std_time, format = "%Y-%m-%d %H:%M:%S"), 1, 13)
-  exclude_vars <- c("std_time", "time")
-  df_temporary_clean <- data_full %>% group_by(time_hourly) %>% summarize(across(
-      .cols = -all_of(exclude_vars),  # Exclude specified variables
-      .fns = my_mean  # Apply the my_mean function with na.rm=TRUE
-    ))
-  assign(paste0("df_", pol), df_temporary_clean, envir = .GlobalEnv)
-}
+# pol_cat_names <- c("bc", "rd", "co", "nox", "o3", "met", "ch4", "h2s", "voc")
+# 
+# my_mean <- function(x){
+#   mean(x, na.rm=TRUE)
+# }
+# 
+# for (pol in pol_cat_names){
+#   data_names <- objects(pattern = paste0('LNM_', pol))
+#   
+#   data_full <- tibble()
+#   for (data_name in data_names) {
+#     data_full <- rbind(data_full, get(data_name))
+#   }
+#   
+#   # Convert to standard time format
+#   data_full$std_time <- as_datetime(data_full$time, tz = "MST")
+#   
+#   data_full$time_hourly <- substr(format(data_full$std_time, format = "%Y-%m-%d %H:%M:%S"), 1, 13)
+#   exclude_vars <- c("std_time", "time")
+#   df_temporary_clean <- data_full %>% group_by(time_hourly) %>% summarize(across(
+#       .cols = -all_of(exclude_vars),  # Exclude specified variables
+#       .fns = my_mean  # Apply the my_mean function with na.rm=TRUE
+#     ))
+#   assign(paste0("df_", pol), df_temporary_clean, envir = .GlobalEnv)
+# }
 ```
 
 ### Data Merging
 ```{r}
-df_trailer <- df_rd %>%
-  full_join(df_co, by = 'time_hourly') %>%
-  full_join(df_bc, by = 'time_hourly') %>%
-  full_join(df_nox, by = 'time_hourly') %>%
-  full_join(df_o3, by = 'time_hourly') %>%
-  full_join(df_met, by = 'time_hourly') %>%
-  full_join(df_ch4, by = 'time_hourly') %>%
-  full_join(df_h2s, by = 'time_hourly') %>%
-  full_join(df_voc, by = 'time_hourly')
+# df_trailer <- df_rd %>%
+#   full_join(df_co, by = 'time_hourly') %>%
+#   full_join(df_bc, by = 'time_hourly') %>%
+#   full_join(df_nox, by = 'time_hourly') %>%
+#   full_join(df_o3, by = 'time_hourly') %>%
+#   full_join(df_met, by = 'time_hourly') %>%
+#   full_join(df_ch4, by = 'time_hourly') %>%
+#   full_join(df_h2s, by = 'time_hourly') %>%
+#   full_join(df_voc, by = 'time_hourly')
 ```
 
 ```{r}
 # add a hour variable
-df_trailer$hour <- as.numeric(substr(df_trailer$time_hourly, 12, 13))
-```
-```{r}
-# remove room_f, pump_f, sw_comp_purge
-df_trailer <- df_trailer %>% select(-c(t_room_f, sw_comp_purge, t_pump_f))
-```
-
-```{r}
-summary(df_trailer)
+hourly_data$hour <- as.numeric(substr(hourly_data$time_utc, 12, 13))
 ```
 
 
 ```{r}
 # Saving
-saveRDS(df_trailer, file = "TrailerProcessed.rds")
+saveRDS(hourly_data, file = "TrailerProcessed-20240601.rds")
 trailer_old <- readRDS("TrailerProcessed.rds")
 ```
 

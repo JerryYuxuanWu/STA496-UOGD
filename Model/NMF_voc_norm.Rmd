@@ -15,29 +15,8 @@ library(gridExtra)
 ```{r}
 # read the radon data
 hourly_radon <- readRDS("hourly_radon.rds")
-
-filenames <- list.files('../data/VOC sampling window data/')
-filenames <- filenames[grep('.csv', filenames)]
-
-for (i in 1:length(filenames)) {
-  col_names <- read_csv(paste0('../data/VOC sampling window data/', filenames[i]), n_max = 0) %>% names()
-  units <- read_csv(paste0('../data/VOC sampling window data/', filenames[i]), skip = 1, n_max = 0) %>% names()
-  data <- read_csv(paste0('../data/VOC sampling window data/', filenames[i]), skip = 1)
-  colnames(data) <- col_names
-  data$time_utc <- as.character(data$time_utc)
-  
-  if (i == 1) {
-    hourly_data <- data
-    units_full <- tibble(var = col_names, unit = units)
-  } else {
-    hourly_data <- hourly_data %>%
-      left_join(data, join_by(time_utc))
-    units_full <- rbind(units_full, tibble(var = col_names[-1],
-                                           unit = units[-1]))
-  }
-}
-
 ```
+
 ```{r}
 # remove NAs
 hourly_radon <- hourly_radon %>% 

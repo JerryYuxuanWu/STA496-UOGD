@@ -10,7 +10,7 @@ library(geosphere)
 ```
 
 ```{r}
-flaring <- readRDS("../data/pb_vnf/pb-vnf_220831-240301-v1.rds")
+flaring <- readRDS("../data/pb_vnf/pb-vnf_230414-240901.rds")
 ```
 
 ## Filtering and Processing
@@ -37,12 +37,12 @@ distance_km_lov <- function(long, lati){
 
 flaring <- flaring %>% 
   mutate(distToLovi = mapply(distance_km_lov, lon, lat)) %>% 
-  select(c("datetime", "distToLovi", "temp_bb", "rhi", "esf_bb", "area_bb", "lon", "lat")) 
+  select(c("date", "distToLovi", "temp_bb", "rhi", "esf_bb", "area_bb", "lon", "lat")) 
 ```
 
 ### Saving
 ```{r}
-saveRDS(flaring, "FlaringProcessed-v4.rds")
+saveRDS(flaring, "FlaringProcessed.rds")
 ```
 
 

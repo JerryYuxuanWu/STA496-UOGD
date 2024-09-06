@@ -10,8 +10,8 @@ library(tidyverse)
 
 ```{r}
 # Read all the related RDS first
-flaring <- readRDS('FlaringProcessed-v4.rds')
-Trailer <- readRDS('TrailerProcessed.rds')
+flaring <- readRDS('FlaringProcessed.rds')
+Trailer <- readRDS('TrailerProcessed-20240601.rds')
 Weather <- readRDS('WeatherProcessed.rds')
 Wells <- readRDS('WellsProcessed0301.rds')
 ```
@@ -22,8 +22,8 @@ Wells <- readRDS('WellsProcessed0301.rds')
 Trailer <- Trailer[!is.na(Trailer$radon_pCi) & !is.na(Trailer$rd_particle_pCi), ]
 
 # add a daily date and a monthly date
-Trailer <- Trailer %>% mutate(datetime = substr(time_hourly, 1, 10))
-Trailer <- Trailer %>% mutate(datetime_monthly = substr(time_hourly, 1, 7))
+Trailer <- Trailer %>% mutate(datetime = format(as.POSIXct(time_utc), '%Y-%m-%d'))
+Trailer <- Trailer %>% mutate(datetime_monthly = format(as.POSIXct(time_utc), '%Y-%m'))
 ```
 ```{r}
 # create a trailer_daily
@@ -31,10 +31,10 @@ my_mean <- function(x){
   mean(x, na.rm=TRUE)
 }
 Trailer_daily <- Trailer %>% group_by(datetime) %>% 
-  summarize_at(vars(-c(time_hourly, hour, datetime_monthly)), list(mean = my_mean))
+  summarize_at(vars(-c(time_utc, hour, datetime_monthly)), list(mean = my_mean))
 
 # add a month variable for that
-Trailer_daily <- Trailer_daily %>% mutate(datetime_monthly = substr(datetime, 1, 7))
+Trailer_daily <- Trailer_daily %>% mutate(datetime_monthly = format(as.POSIXct(datetime), '%Y-%m'))
 ```
 ```{r}
 # add an inverse distance for flaring

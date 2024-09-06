@@ -1,7 +1,7 @@
 ---
-title: "FlaringProcess"
-author: "William Zhang"
-date: "2023-09-28"
+title: "WeatherProcess"
+author: "William Zhang, Jerry"
+date: "2024-09-04"
 output: html_document
 ---
 ```{r setup, include=FALSE}
@@ -10,16 +10,29 @@ library(lubridate)
 ```
 ## Reading in data
 ```{r}
-weather <- read.csv("../data/Weather/StationData230414-0927.csv")
-weather2 <- read.csv("../data/Weather/StationData230928-240520.csv")
+csv_names <- list.files('../data/Weather/')
+csv_names <- csv_names[endsWith(csv_names, '.csv')]
+
+for (i in 1:length(csv_names)){
+  new <- read_csv(paste0('../data/Weather/', csv_names[i]), col_types='d', col_select = -c(1))
+  new <- new %>%
+    slice(2:(n() - 8))
+  if (i == 1){
+    full <- new
+  } else {
+    full <- full %>%
+      bind_rows(new)
+  }
+}
 ```
 ## Cleaning
 ```{r}
+# Download from https://aqi.air.env.nm.gov/StationReportFast.aspx?ST_ID=35#
 # credit to Jerry Wu for some of the code here
-weather <- rbind(weather[-1, ] %>% select(-c(Station.5ZR.Carlsbad.., PM25)), 
-                 weather2[-1, ] %>% select(-c(Station.5ZR.Carlsbad.., PM2.5_Archive)))
+weather <- full %>% select(-c(PM25, PM2.5_Archive))
+
 # Convert date column to date type
-weather$`Date Time` <- mdy_hm(weather$Date.Time, tz = 'MST')
+weather$`Date Time` <- mdy_hm(weather$`Date Time`, tz = 'MST')
 weather$`year` <- format(weather$`Date Time`, '%Y')
 
 # Convert the rest to numeric
@@ -28,7 +41,7 @@ sapply(weather, class)
 
 # Rename the columns to match what openair uses
 weather <- weather %>%
-  rename('date' = `Date Time`, 'ws' = `Wind.Speed.S`, 'wd' = `Wind.Dir.S`,
+  rename('date' = `Date Time`, 'ws' = `Wind Speed S`, 'wd' = `Wind Dir S`,
          'nox' = `NOXppb`, 'no2' = `NO2ppb`, 'o3' = `O3`, 'no' = `NOppb`)
 ```
 
