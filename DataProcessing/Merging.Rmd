@@ -1,7 +1,7 @@
 ---
 title: "Merging"
-author: "William Zhang"
-date: "2023-10-08"
+author: "William Zhang, Jerry"
+date: "2024-09-06"
 output: html_document
 ---
 ```{r}
@@ -19,22 +19,22 @@ Wells <- readRDS('WellsProcessed0301.rds')
 ## A few processing
 ```{r}
 # Remove Trailer entries where radon_pci or rd_particle_pci is NA
-Trailer <- Trailer[!is.na(Trailer$radon_pCi) & !is.na(Trailer$rd_particle_pCi), ]
+# Trailer <- Trailer[!is.na(Trailer$radon_pCi) & !is.na(Trailer$rd_particle_pCi), ]
 
 # add a daily date and a monthly date
-Trailer <- Trailer %>% mutate(datetime = format(as.POSIXct(time_utc), '%Y-%m-%d'))
-Trailer <- Trailer %>% mutate(datetime_monthly = format(as.POSIXct(time_utc), '%Y-%m'))
+Trailer <- Trailer %>% mutate(day = format(as.POSIXct(time_utc), '%Y-%m-%d'))
+Trailer <- Trailer %>% mutate(yearmonth = format(as.POSIXct(time_utc), '%Y-%m'))
 ```
 ```{r}
 # create a trailer_daily
 my_mean <- function(x){
   mean(x, na.rm=TRUE)
 }
-Trailer_daily <- Trailer %>% group_by(datetime) %>% 
-  summarize_at(vars(-c(time_utc, hour, datetime_monthly)), list(mean = my_mean))
+Trailer_daily <- Trailer %>% group_by(day) %>% 
+  summarize_at(vars(-c(time_utc, hour, yearmonth)), list(mean = my_mean))
 
 # add a month variable for that
-Trailer_daily <- Trailer_daily %>% mutate(datetime_monthly = format(as.POSIXct(datetime), '%Y-%m'))
+Trailer_daily <- Trailer_daily %>% mutate(yearmonth = format(as.POSIXct(day), '%Y-%m'))
 ```
 ```{r}
 # add an inverse distance for flaring
@@ -45,7 +45,7 @@ flaring$inv_dist <- ifelse(1 / flaring$distToLovi < 0.01, 0, 1 / flaring$distToL
 flaring_daily <- flaring %>% 
   # weighted_count = sum of inv_distance
   filter(distToLovi <= 100) %>% 
-  group_by(substr(datetime, 1, 10)) %>% 
+  group_by(substr(date, 1, 10)) %>% 
   summarize(temp_bb = mean(temp_bb),
             closest.flare = min(distToLovi),
             distToLovi = mean(distToLovi),
@@ -53,8 +53,8 @@ flaring_daily <- flaring %>%
             weighted.count = sum(inv_dist) * 100,
             rhi = mean(rhi),
             esf_bb = mean(esf_bb),
-            count = n()) %>% 
-  rename(datetime = `substr(datetime, 1, 10)`)
+            flare_count = n()) %>% 
+  rename(date = `substr(date, 1, 10)`)
 ```
 
 
@@ -72,51 +72,61 @@ wells_monthly <- Wells %>% group_by(substr(prod_date, 1, 7)) %>%
 ```{r}
 Trailer_hourly_merge <- merge(x = Trailer, 
                               y = flaring_daily,
-                              by.x = 'datetime',
-                              by.y = 'datetime',
+                              by.x = 'day',
+                              by.y = 'date',
                               all.x = TRUE,
-                              all.y = TRUE)
+                              all.y = FALSE)
 Trailer_hourly_merge <- merge(x = Trailer_hourly_merge,
                               y = wells_monthly,
-                              by.x = 'datetime_monthly',
+                              by.x = 'yearmonth',
                               by.y = 'Month',
                               all.x = TRUE,
-                              all.y = TRUE)
+                              all.y = FALSE)
 ```
 ```{r}
 Trailer_daily_merge <- merge(x = Trailer_daily, 
                               y = flaring_daily,
-                              by.x = 'datetime',
-                              by.y = 'datetime',
+                              by.x = 'day',
+                              by.y = 'date',
                               all.x = TRUE,
-                              all.y = TRUE)
+                              all.y = FALSE)
 Trailer_daily_merge <- merge(x = Trailer_daily_merge,
                               y = wells_monthly,
-                              by.x = 'datetime_monthly',
+                              by.x = 'yearmonth',
                               by.y = 'Month',
                               all.x = TRUE,
-                              all.y = TRUE)
+                              all.y = FALSE)
 ```
 
 ```{r}
 # some additional cleaning after merging
-Trailer_hourly_merge <- Trailer_hourly_merge %>% select(-c(datetime_monthly, h2o_sync)) %>% 
-  filter(!is.na(radon_pCi)) %>% filter(!is.na(rd_particle_pCi))
+Trailer_hourly_merge <- Trailer_hourly_merge %>% select(-c(yearmonth))
 
-Trailer_daily_merge <- Trailer_daily_merge %>% select(-c(datetime_monthly, h2o_sync_mean)) %>% 
-  filter(!is.na(radon_pCi_mean)) %>% filter(!is.na(rd_particle_pCi_mean))
+Trailer_daily_merge <- Trailer_daily_merge %>% select(-c(yearmonth))
 ```
 
 ```{r}
 # make datetime a Date variable
-Trailer_hourly_merge <- Trailer_hourly_merge %>% mutate(datetime = as.Date(datetime))
-Trailer_daily_merge <- Trailer_daily_merge %>% mutate(datetime = as.Date(datetime))
+Trailer_hourly_merge <- Trailer_hourly_merge %>% mutate(day = as.Date(day))
+Trailer_daily_merge <- Trailer_daily_merge %>% mutate(day = as.Date(day))
+```
+
+# Further cleaning
+```{r}
+# making NA flare_count to 0
+Trailer_daily_merge$flare_count[is.na(Trailer_daily_merge$flare_count)] <- 0
+Trailer_hourly_merge$flare_count[is.na(Trailer_hourly_merge$flare_count)] <- 0
+Trailer_daily_merge$weighted.count[is.na(Trailer_daily_merge$weighted.count)] <- 0
+Trailer_hourly_merge$weighted.count[is.na(Trailer_hourly_merge$weighted.count)] <- 0
+# none flare within 100km
+Trailer_daily_merge$closest.flare[is.na(Trailer_daily_merge$closest.flare)] <- 100
+Trailer_hourly_merge$closest.flare[is.na(Trailer_hourly_merge$closest.flare)] <- 100
 ```
 
 ## Saving
 ```{r}
-saveRDS(Trailer_hourly_merge, "Trailer_hourly_merge.rds")
-saveRDS(Trailer_daily_merge, "Trailer_daily_merge.rds")
+saveRDS(Trailer_hourly_merge, "Trailer_hourly_merge_20240905.rds")
+saveRDS(Trailer_daily_merge, "Trailer_daily_merge_20240905.rds")
 ```
 
 

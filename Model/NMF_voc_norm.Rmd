@@ -9,85 +9,158 @@ output: html_document
 library(NMF)
 library(tidyverse)
 library(gridExtra)
+library(readxl)
 ```
 
 ## Reading the data
 ```{r}
 # read the radon data
-hourly_radon <- readRDS("hourly_radon.rds")
+# Old: 
+# hourly_radon <- readRDS("hourly_radon.rds")
+# New:
+hourly_data <- readRDS("../DataProcessing/Trailer_hourly_merge_20240905.rds")
 ```
 
 ```{r}
 # remove NAs
-hourly_radon <- hourly_radon %>% 
-  select(-c(bc, flag, intensity_a, intensity_b, instr_temp_c, lamp_temp_c, flow_a, flow_b, pressure.x, pressure.y, mode, water_vapor_mr, T101_Mode)) %>%
-  relocate(pressure_altcorr, .after = temp_f)
-
-# remove NAs
-hourly_radon_nona <- hourly_radon %>% select(-c(distToLovi_wells, monthly_oil, monthly_gas)) %>% na.omit()
+hourly_nona <- hourly_data %>% select(-c(temp_bb,rhi, esf_bb, distToLovi,inv_dist, 
+                                         distToLovi_wells, monthly_oil, monthly_gas)) %>% na.omit()
 
 # retrieving the vocs, removing everything else except the vocs
-hourly_vocs <- hourly_radon_nona %>% select(-c(datetime, time_hourly, radon_B, radon_pCi, rd_particle_B, rd_particle_pCi, co, co2_ppm, no, no2, nox, o3, h2s, so2, ch4, temp_f, pressure_altcorr, rain, relh, wsp, wdr, solr, co2_ppm, hour, closest.flare, count, weighted.count))
+hourly_vocs <- hourly_nona %>% select(c("ethane", "ethene", "propane", "propene",
+                                        "1_3-butadiene", "i-butane", "n-butane",
+                                        "acetylene", "cyclopentane", "i-pentane",
+                                        "n-pentane", "n-hexane", "isoprene", "n-heptane",
+                                        "benzene", "n-octane", "toluene", "ethyl-benzene", 
+                                        "m&p-xylene", "o-xylene"))
 
 # retrieving the non-vocs: co2_ppm, nox, ch4, h2s, so2, o3
-hourly_non_vocs <- hourly_radon_nona %>% select(c(co2_ppm, nox, o3, h2s, so2, ch4))
+# double check this
+non_vocs <- c('ch4', 'co2_ppm', 'co', 'h2s', 'so2', 'nox', 'o3')
+hourly_non_vocs <- hourly_nona %>% select(c(non_vocs))
+
+hourly_full_nona <- cbind(hourly_non_vocs, hourly_vocs)
+
+# retrive a vector of yearmonth
+hourly_dates <- hourly_nona %>% 
+  mutate(yearmonth = substring(day, 0, 7)) %>%
+  pull(yearmonth)
+``` 
+### Data preprocessing
+```{r}
+# Define LOD for each chemical
+LOD_non_voc <- c('ch4' = 0.9, 
+             'co2_ppm' = 0.0433, 
+             'co' = 40,
+             'h2s' = 0.4, 
+             'so2' = 0.4,
+             'nox' = 0.05, 
+             'o3' = 1)
+
+LOD_voc_monthly <- read_csv('../data/LNM_VOC_LOD_Rounded.csv') %>% select(-1)
+# extract the yearmonth from date variables
+LOD_voc_monthly <- LOD_voc_monthly %>%
+  mutate(yearmonth = strftime(as.POSIXct(start_date, format = '%Y-%m-%d %H:%M:%S', tz = 'UTC'), '%Y-%m')) 
+
+LOD_voc_monthly <- LOD_voc_monthly %>% 
+  select(-c(start_date, end_date)) %>%
+  select(!any_of(ends_with('half_ldl')))
+
+colnames(LOD_voc_monthly) <- str_replace_all(names(LOD_voc_monthly), '_ldl', '')
+
+LOD_voc_avg <- read_xlsx('../data/LNM_VOC_Uncertainties.xlsx', skip = 1)
+LOD_voc_avg <- LOD_voc_avg %>%
+  select(1, 4) %>%
+  rename('LOD' = 2, 'chemical' = 1) %>%
+  head(20)
 ```
-### VOC preprocessing
+
 ```{r}
 # find the min for background-levels
-background_levels <- sapply(hourly_vocs, min)
+background_levels <- sapply(hourly_full_nona, min)
 ```
 ```{r}
 background_levels
 ```
 ```{r}
 #adjusting by subtracting the minimum value
-adjusted_hourly_vocs <- as.data.frame(sapply(names(hourly_vocs), function(tracer){ 
-  hourly_vocs[[tracer]] - background_levels[[tracer]]
+adjusted_hourly <- as.data.frame(sapply(names(hourly_full_nona), function(tracer){ 
+  hourly_full_nona[[tracer]] - background_levels[[tracer]]
 }))
 ```
 
 ```{r}
-# simply checking how many minimum values for each vocs
-colSums(adjusted_hourly_vocs == 0)
+# simply checking how many minimum values for each analyte
+colSums(adjusted_hourly == 0)
 ```
+```{r}
+get_info <- function(column) {
+  N <- length(column)
+  background <- quantile(column, 0)
+  quantile1 <- quantile(column, 0.01)
+  quantile99 <- quantile(column, 0.99)
+  return(c(N, quantile1, quantile99, background))
+}
+
+info_table <- hourly_full_nona %>%
+  summarise(across(everything(), ~ get_info(.x)))
+
+info_table <- info_table %>%  
+  mutate(rownames = c('N', '1st percentile', '99th percentile', 'Background')) %>%
+  pivot_longer(-rownames) %>%   
+  pivot_wider(names_from = rownames, values_from = value) 
+
+knitr::kable(info_table)
+```
+
 ```{r}
 #adjustments that were made according to paper
 #William: I'm guessing this refers to Gunnar's paper section 2.2
-adjusting_negligible_background_from_LOD <- function(data_frame, LOD){ 
-  adjusted <- data_frame
-  for (x in names(data_frame)){
-    
-    min_value <- min(data_frame[x], na.rm = TRUE)
-    max_value <- max(data_frame[x], na.rm = TRUE)
-    if (min_value < 2 * LOD || max_value > 100 * LOD ){
-      adjusted[[x]] <- -100
+adjusting_neg_bg_from_lod <- function(chemical, LOD, background, hourly_data){ 
+    # get min and max
+    min_value <- min(hourly_data[chemical], na.rm = TRUE)
+    max_value <- max(hourly_data[chemical], na.rm = TRUE)
+    # if min less than double LOD or max > 100 times LOD
+    # adjust to -100 (for entire column???)
+    if (min_value < 2 * LOD & max_value > 100 * LOD ){
+      return (0)
     }
-  }
-  return (adjusted)
+  return (background)
 }
 ```
 
 ```{r}
-# split the VOCs based on their LOD levels, take out the different ones
-# ethane, propane, benzene, acetylene
-ethane_col <- adjusted_hourly_vocs %>% select(ethane)
-propane_col <- adjusted_hourly_vocs %>% select(propane)
-benzene_col <- adjusted_hourly_vocs %>% select(benzene)
-acetylene_col <- adjusted_hourly_vocs %>% select(acetylene)
-rest_col <- adjusted_hourly_vocs %>% select(-ethane, -propane, -benzene, -acetylene)
+# Check if background is negligible for non voc
+# merge background and LOD
+background_lod_non_voc <- tibble(chemical = non_vocs,
+                                 LOD = LOD_non_voc,
+                                 background = unname(background_levels[non_vocs]))
+adjusted_background_non_voc <- background_lod_non_voc %>%
+  rowwise() %>%
+  mutate(min = min(hourly_data[chemical], na.rm = TRUE),
+         LODx2 = 2 * LOD,
+         criterion1 = min(hourly_data[chemical], na.rm = TRUE) < 2 * LOD,
+         max = max(hourly_data[chemical], na.rm = TRUE),
+         LODx100 = 100 * LOD,
+         criterion2 = max(hourly_data[chemical], na.rm = TRUE) > 100 * LOD,
+         adjusted_background = adjusting_neg_bg_from_lod(chemical, LOD, background, hourly_data))
 ```
+
 ```{r}
-# make the adjustments
-ethane <- adjusting_negligible_background_from_LOD(ethane_col, 0.1)
-propane <- adjusting_negligible_background_from_LOD(propane_col, 0.05)
-benzene <- adjusting_negligible_background_from_LOD(benzene_col, 0.005)
-acetylene <- adjusting_negligible_background_from_LOD(acetylene_col, 0.01)
-rest <- adjusting_negligible_background_from_LOD(rest_col, 0.01)
-```
-```{r}
-# checking how many are negative
-colSums(rest < 0)
+# Check if background is negligible for voc
+# merge background and LOD
+background_lod_voc <- LOD_voc_avg %>%
+  left_join(tibble(chemical = setdiff(names(background_levels), non_vocs),
+                   background = background_levels[setdiff(names(background_levels), non_vocs)]))
+adjusted_background_voc <- background_lod_voc %>%
+  rowwise() %>%
+  mutate(min = min(hourly_data[chemical], na.rm = TRUE),
+         LODx2 = 2 * LOD,
+         criterion1 = min(hourly_data[chemical], na.rm = TRUE) < 2 * LOD,
+         max = max(hourly_data[chemical], na.rm = TRUE),
+         LODx100 = 100 * LOD,
+         criterion2 = max(hourly_data[chemical], na.rm = TRUE) > 100 * LOD,
+         adjusted_background = adjusting_neg_bg_from_lod(chemical, LOD, background, hourly_data))
 ```
 
 ```{r}
@@ -103,17 +176,6 @@ replace_negatives_with_random <- function(data_frame, LOD){
   return (adjusted)
 }
 ```
-```{r}
-ethane <- replace_negatives_with_random(ethane, 0.1)
-propane <- replace_negatives_with_random(propane, 0.05)
-benzene <- replace_negatives_with_random(benzene, 0.005)
-acetylene <- replace_negatives_with_random(acetylene, 0.01)
-rest <- replace_negatives_with_random(rest, 0.01)
-```
-```{r}
-# Merging
-Merged_VOCs <- cbind(ethane, propane, benzene, acetylene, rest)
-```
 
 ### Normalize the non-vocs
 ```{r}
@@ -126,47 +188,36 @@ normalize_column <- function(column){
 ```
 ```{r}
 #Getting the Transpose
-Normalized_Data <- hourly_non_vocs 
-Normalized_Data <- sapply(hourly_non_vocs, normalize_column) #normalize the NON_VOC
+normalized_non_vocs <- as_tibble(sapply(as.list(hourly_non_vocs), normalize_column)) #normalize the NON_VOC
+summary(normalized_non_vocs)
 ```
 ```{r}
 # normalizing the vocs too
-Normalized_VOCs <- sapply(Merged_VOCs, normalize_column)
+normalized_vocs <- as_tibble(sapply(as.list(hourly_vocs), normalize_column))
+summary(normalized_vocs)
 ```
 
 ### Combine and Transpose
 ```{r}
-Transpose <- cbind(Normalized_Data, Normalized_VOCs) #important: using the normalized VOCs for this file
+normalized_matrix <- cbind(normalized_non_vocs, normalized_vocs) #important: using the normalized VOCs for this file
 
 # Transpose <- cbind(Normalized_Data, Merged_VOCs)
 # rownames(Transpose) <- as.character(Transpose[,1]) # I'm not able to run this line, but it shouldn't affect anything
-Transpose_Matrix <- t(as.matrix(Transpose))
+transpose_normalized_matrix <- t(as.matrix(normalized_matrix))
 
-number_row<- dim(Transpose_Matrix)[1] #store number of rows (used for checking)
-number_column<- dim(Transpose_Matrix)[2] #store number of columns
+number_row<- dim(transpose_normalized_matrix)[1] #store number of rows (used for checking)
+number_column<- dim(transpose_normalized_matrix)[2] #store number of columns
 ```
 
 ## NMF section
 ```{r}
-n_rows <- nrow(Transpose_Matrix)
-n_cols <- ncol(Transpose_Matrix)
-weight_matrix <- matrix(0, nrow(Transpose_Matrix), ncol(Transpose_Matrix))
-LOD_vector = c(0.05, 0.05, 1, 0.1, 0.1, 0.05, 0.1, 0.05, 0.005, 0.01) # hard-coded values for LOD_vector
-# the orders are the same as the orders for the rows in Transpose_matrix; co2_ppm, nox, o3, h2s, ....
-
-Rest = rep(0.01, 16) # rest of the VOCs are 0.01
-LOD_vector_merged = c(LOD_vector, Rest) #merged the two results above
-```
-
-
-```{r}
 # Based on the Guha paper
 # next comment is from the other nmf R file
-
+weight_matrix <- matrix(0, nrow(transpose_normalized_matrix), ncol(transpose_normalized_matrix))
 # creating uncertainty Matrix ???
 for (i in 1:n_rows) { 
   for (j in 1:n_cols) {
-    xij <- Transpose_Matrix[i, j]
+    xij <- transpose_normalized_matrix[i, j]
     LOD <- LOD_vector_merged[i]  # Get LOD value for this row 
     if (i == 6){ # based on equation 6, we sqrt ch4 (at row = 6) and times by 1
       weight_matrix[i, j] <- sqrt(xij)
@@ -189,7 +240,7 @@ for (i in 1:n_rows) {
 set.seed(123)
 #function below used to estimate the optimal rank and will be used in the nmf() function. 
 # takes around 20-30 mins to run
-# estimate_rank <- nmfEstimateRank(Transpose_Matrix, 4:20, method = "ls-nmf", weight = weight_matrix, 5)
+estimate_rank <- nmfEstimateRank(Transpose_Matrix, 4:20, method = "ls-nmf", weight = weight_matrix, 5)
 # changing the range of rank to 2:20 from 4:20
 # nrun = 5
 # saveRDS(estimate_rank, 'estimate_rank.rds')
