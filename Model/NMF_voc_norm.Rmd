@@ -78,21 +78,9 @@ LOD_voc_avg <- LOD_voc_avg %>%
 ```{r}
 # find the min for background-levels
 background_levels <- sapply(hourly_full_nona, min)
-```
-```{r}
 background_levels
 ```
-```{r}
-#adjusting by subtracting the minimum value
-adjusted_hourly <- as.data.frame(sapply(names(hourly_full_nona), function(tracer){ 
-  hourly_full_nona[[tracer]] - background_levels[[tracer]]
-}))
-```
 
-```{r}
-# simply checking how many minimum values for each analyte
-colSums(adjusted_hourly == 0)
-```
 ```{r}
 get_info <- function(column) {
   N <- length(column)
@@ -115,7 +103,7 @@ knitr::kable(info_table)
 
 ```{r}
 #adjustments that were made according to paper
-#William: I'm guessing this refers to Gunnar's paper section 2.2
+#William: I'm guessing this refers to Gunnar's paper section 2.2 and Guha 3.3
 adjusting_neg_bg_from_lod <- function(chemical, LOD, background, hourly_data){ 
     # get min and max
     min_value <- min(hourly_data[chemical], na.rm = TRUE)
@@ -162,20 +150,40 @@ adjusted_background_voc <- background_lod_voc %>%
          criterion2 = max(hourly_data[chemical], na.rm = TRUE) > 100 * LOD,
          adjusted_background = adjusting_neg_bg_from_lod(chemical, LOD, background, hourly_data))
 ```
+```{r}
+# So now we have the adjusted background concentrations
+subtract_adj_bg <- function(column, chemical) {
+  print(chemical)
+  result <- 
+  return (result)
+}
+hourly_nona_bgrm <- hourly_full_nona %>%
+  mutate(across(adjusted_background_non_voc$chemical, ~  .x - adjusted_background_non_voc$adjusted_background[adjusted_background_non_voc$chemical== cur_column()]))
+hourly_nona_bgrm <- hourly_nona_bgrm %>%
+  mutate(across(adjusted_background_voc$chemical, ~  .x - adjusted_background_voc$adjusted_background[adjusted_background_voc$chemical== cur_column()]))
+```
+
+```{r}
+# look at zero values
+colSums(hourly_nona_bgrm == 0)
+```
 
 ```{r}
 # replace negative values with random values between 0 and 0.5*LOD
-replace_negatives_with_random <- function(data_frame, LOD){
-  adjusted <- data_frame
-  for (x in names(data_frame)){
-    negatives_exist <- any(data_frame[[x]] < 0, na.rm = TRUE)
-    if (negatives_exist){
-      adjusted[[x]] <- runif(nrow(data_frame), 0, 0.5 * LOD)
-    }
-  }
-  return (adjusted)
+set.seed(123)
+replace_zero_with_random <- function(column, name, LOD_df){
+  LOD <- LOD_df$LOD[LOD_df$chemical == name]
+  column <- if_else(column == 0, round(runif(length(column), 0, 0.5 * LOD), 3), column)
+  return (column)
 }
+
+hourly_nona_bgrm_zerorepl <- hourly_nona_bgrm %>%
+  mutate(across(adjusted_background_non_voc$chemical, ~ replace_zero_with_random(.x, cur_column(), adjusted_background_non_voc)))
+
+hourly_nona_bgrm_zerorepl <- hourly_nona_bgrm_zerorepl %>%
+  mutate(across(adjusted_background_voc$chemical, ~ replace_zero_with_random(.x, cur_column(), adjusted_background_voc)))
 ```
+
 
 ### Normalize the non-vocs
 ```{r}
@@ -186,20 +194,16 @@ normalize_column <- function(column){
   return ((column - background)/(max - background))
 }
 ```
+
 ```{r}
-#Getting the Transpose
-normalized_non_vocs <- as_tibble(sapply(as.list(hourly_non_vocs), normalize_column)) #normalize the NON_VOC
-summary(normalized_non_vocs)
-```
-```{r}
-# normalizing the vocs too
-normalized_vocs <- as_tibble(sapply(as.list(hourly_vocs), normalize_column))
-summary(normalized_vocs)
+# normalize all
+hourly_nona_bgrm_zerorepl_norm <- as_tibble(sapply(as.list(hourly_nona_bgrm_zerorepl), normalize_column)) #normalize the NON_VOC
+summary(hourly_nona_bgrm_zerorepl_norm)
 ```
 
 ### Combine and Transpose
 ```{r}
-normalized_matrix <- cbind(normalized_non_vocs, normalized_vocs) #important: using the normalized VOCs for this file
+normalized_matrix <- hourly_nona_bgrm_zerorepl_norm #important: using the normalized VOCs for this file
 
 # Transpose <- cbind(Normalized_Data, Merged_VOCs)
 # rownames(Transpose) <- as.character(Transpose[,1]) # I'm not able to run this line, but it shouldn't affect anything
@@ -211,14 +215,21 @@ number_column<- dim(transpose_normalized_matrix)[2] #store number of columns
 
 ## NMF section
 ```{r}
+# compute weight matrix (uncertainties)
 # Based on the Guha paper
 # next comment is from the other nmf R file
 weight_matrix <- matrix(0, nrow(transpose_normalized_matrix), ncol(transpose_normalized_matrix))
+LOD_merged <- tibble(chemical = c(adjusted_background_non_voc$chemical, adjusted_background_voc$chemical),
+                     LOD = c(adjusted_background_non_voc$LOD, adjusted_background_voc$LOD))
+
+LOD_merged <- tibble(chemical = rownames(transpose_normalized_matrix)) %>%
+  left_join(LOD_merged)
+
 # creating uncertainty Matrix ???
-for (i in 1:n_rows) { 
-  for (j in 1:n_cols) {
+for (i in 1:number_row) { 
+  for (j in 1:number_column) {
     xij <- transpose_normalized_matrix[i, j]
-    LOD <- LOD_vector_merged[i]  # Get LOD value for this row 
+    LOD <- LOD_merged$LOD[[i]]  # Get LOD value for this row 
     if (i == 6){ # based on equation 6, we sqrt ch4 (at row = 6) and times by 1
       weight_matrix[i, j] <- sqrt(xij)
     }
@@ -237,12 +248,12 @@ for (i in 1:n_rows) {
 
 ```{r}
 # set a seed for nmf
-set.seed(123)
-#function below used to estimate the optimal rank and will be used in the nmf() function. 
-# takes around 20-30 mins to run
-estimate_rank <- nmfEstimateRank(Transpose_Matrix, 4:20, method = "ls-nmf", weight = weight_matrix, 5)
-# changing the range of rank to 2:20 from 4:20
-# nrun = 5
+# set.seed(123)
+# #function below used to estimate the optimal rank and will be used in the nmf() function. 
+# # takes around 20-30 mins to run
+# estimate_rank <- nmfEstimateRank(transpose_normalized_matrix, 4:10, method = "ls-nmf", weight = weight_matrix, 30)
+# # changing the range of rank to 2:20 from 4:20
+# # nrun = 5
 # saveRDS(estimate_rank, 'estimate_rank.rds')
 
 estimate_rank <- readRDS('estimate_rank.rds')
@@ -259,7 +270,7 @@ plot(estimate_rank)
 ```{r}
 # fitting the optimal rank based on the above plots
 # the choice of the optimal rank needs to be discussed
-output <- nmf(Transpose_Matrix, rank = 6, weight = weight_matrix, method = "ls-nmf")
+output <- nmf(transpose_normalized_matrix, rank = 8, weight = weight_matrix, method = "ls-nmf")
 W <- basis(output)
 H <- coef(output)
 ```
@@ -267,39 +278,43 @@ H <- coef(output)
 ### Source contributions
 ```{r}
 # Plot source contributions for the first basis vector
-barplot(W[, 1], names.arg = rownames(Transpose_Matrix), main = "Source Contributions to Basis 1", las = 2)
+barplot(W[, 1], names.arg = rownames(transpose_normalized_matrix), main = "Source Contributions to Basis 1", las = 2)
 ```
 ```{r}
-barplot(W[, 2], names.arg = rownames(Transpose_Matrix), main = "Source Contributions to Basis 2", las=2)
-```
-
-```{r}
-barplot(W[, 3], names.arg = rownames(Transpose_Matrix), main = "Source Contributions to Basis 3", las=2)
+barplot(W[, 2], names.arg = rownames(transpose_normalized_matrix), main = "Source Contributions to Basis 2", las=2)
 ```
 ```{r}
-barplot(W[, 4], names.arg = rownames(Transpose_Matrix), main = "Source Contributions to Basis 4", las=2)
+barplot(W[, 3], names.arg = rownames(transpose_normalized_matrix), main = "Source Contributions to Basis 3", las=2)
 ```
 ```{r}
-barplot(W[, 5], names.arg = rownames(Transpose_Matrix), main = "Source Contributions to Basis 5", las=2)
+barplot(W[, 4], names.arg = rownames(transpose_normalized_matrix), main = "Source Contributions to Basis 4", las=2)
 ```
 ```{r}
-barplot(W[, 6], names.arg = rownames(Transpose_Matrix), main = "Source Contributions to Basis 6", las=2)
+barplot(W[, 5], names.arg = rownames(transpose_normalized_matrix), main = "Source Contributions to Basis 5", las=2)
 ```
-
+```{r}
+barplot(W[, 6], names.arg = rownames(transpose_normalized_matrix), main = "Source Contributions to Basis 6", las=2)
+```
+```{r}
+barplot(W[, 7], names.arg = rownames(transpose_normalized_matrix), main = "Source Contributions to Basis 7", las=2)
+```
+```{r}
+barplot(W[, 8], names.arg = rownames(transpose_normalized_matrix), main = "Source Contributions to Basis 8", las=2)
+```
 
 # NMF - Eva 
 ```{r}
 # Try Eva's approach
-components <- 4:20
+components <- 4:10
 errors <- numeric(length(components) - 4)
 
 # Loop over the number of components
 # for (n in components) {
-#   nmf_result <- nmf(t(Transpose_Matrix), rank = n, method = "KL", seed='nndsvd')
-#   reconstruction <- basis(nmf_result)%*% coef(nmf_result)
-#   error <- norm(t(Transpose_Matrix) - reconstruction, type = "F")
+#   nmf_result <- nmf(t(transpose_normalized_matrix), rank = n, method = "KL", seed='nndsvd')
+#   reconstruction <- basis(nmf_result) %*% coef(nmf_result)
+#   error <- norm(t(transpose_normalized_matrix) - reconstruction, type = "F")
 #   errors[n-3] <- error
-#   print(paste0('Completed ', n - 3, ' out of 16'))
+#   print(paste0('Completed ', n - 3, ' out of 7'))
 # }
 # 
 # saveRDS(errors, 'errors_norm.rds')
@@ -322,13 +337,13 @@ ggplot(df, aes(x = components, y = errors)) +
 
 
 ```{r, eval=TRUE, echo = F}
-rankerror6 <-  df[3,2]
-rankerror6
+rankerror4 <-  df[1,2]
+rankerror4
 ```
 
 ```{r, eval=TRUE, echo = F}
 # Apply NMF
-nmf_result <- nmf(t(Transpose_Matrix), rank = 6, method = "KL", seed='nndsvd')
+nmf_result <- nmf(t(transpose_normalized_matrix), rank = 4, method = "KL", seed='nndsvd')
 
 # Examine the basis matrix (W)
 basis_matrix <- basis(nmf_result)
@@ -414,37 +429,8 @@ nfmplt_4 <- ggplot(NFM4, aes(x = Component, y = Contribution)) +
   axis.text = element_text(size = 12), # Size of axis text (tick labels)
   plot.title = element_text(size = 18) # Size of the plot title
 )
-
-NFM5 <- subset(H_long, Chemical == '5')
-# Plot
-nfmplt_5 <- ggplot(NFM5, aes(x = Component, y = Contribution)) +
-  geom_bar(stat = "identity", position = "dodge", fill = "orange") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 4, nudge_y = 0.1) +
-  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components5")+
-  theme(
-  text = element_text(size = 14), # Base text size for all text elements
-  axis.title = element_text(size = 16), # Size of axis titles
-  axis.text = element_text(size = 12), # Size of axis text (tick labels)
-  plot.title = element_text(size = 18) # Size of the plot title
-)
-
-NFM6 <- subset(H_long, Chemical == '6')
-# Plot
-nfmplt_6 <- ggplot(NFM6, aes(x = Component, y = Contribution)) +
-  geom_bar(stat = "identity", position = "dodge", fill = "orange") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 4, nudge_y = 0.1) +
-  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components6")+
-  theme(
-  text = element_text(size = 14), # Base text size for all text elements
-  axis.title = element_text(size = 16), # Size of axis titles
-  axis.text = element_text(size = 12), # Size of axis text (tick labels)
-  plot.title = element_text(size = 18) # Size of the plot title
-)
-
 ```
 
 ```{r, eval=TRUE, echo = FALSE, fig.height=15, fig.width=20}
-grid.arrange(nfmplt_1, nfmplt_2, nfmplt_3, nfmplt_4, nfmplt_5,  nfmplt_6, ncol=2)
+grid.arrange(nfmplt_1, nfmplt_2, nfmplt_3, nfmplt_4, ncol=2)
 ```
