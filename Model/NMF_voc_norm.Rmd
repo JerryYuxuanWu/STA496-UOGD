@@ -4,7 +4,7 @@ author: "William Zhang, Eva, Jerry"
 date: "2024-09-01"
 output: html_document
 ---
-```{r}
+```{r setup, warning = FALSE, message = FALSE}
 # load the packages
 library(NMF)
 library(tidyverse)
@@ -37,7 +37,7 @@ hourly_vocs <- hourly_nona %>% select(c("ethane", "ethene", "propane", "propene"
 # retrieving the non-vocs: co2_ppm, nox, ch4, h2s, so2, o3
 # double check this
 non_vocs <- c('ch4', 'co2_ppm', 'co', 'h2s', 'so2', 'nox', 'o3')
-hourly_non_vocs <- hourly_nona %>% select(c(non_vocs))
+hourly_non_vocs <- hourly_nona %>% select(all_of(non_vocs))
 
 hourly_full_nona <- cbind(hourly_non_vocs, hourly_vocs)
 
@@ -47,7 +47,7 @@ hourly_dates <- hourly_nona %>%
   pull(yearmonth)
 ``` 
 ### Data preprocessing
-```{r}
+```{r, message = FALSE}
 # Define LOD for each chemical
 LOD_non_voc <- c('ch4' = 0.9, 
              'co2_ppm' = 0.0433, 
@@ -91,7 +91,7 @@ get_info <- function(column) {
 }
 
 info_table <- hourly_full_nona %>%
-  summarise(across(everything(), ~ get_info(.x)))
+  reframe(across(everything(), ~ get_info(.x)))
 
 info_table <- info_table %>%  
   mutate(rownames = c('N', '1st percentile', '99th percentile', 'Background')) %>%
