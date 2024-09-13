@@ -12,6 +12,13 @@ library(gridExtra)
 library(readxl)
 ```
 
+# Procedure
+1. Remove hourly observation with missing observation for any chemical
+2. Remove background noise level using min values (except for chemicals with minimum value < 2\*LOD and maximum value > 100\*LOD)
+3. Zero values are converted to a random value between 0 and 0.5\*LOD
+4. Normalize using 0th & 99th quantile
+5. Compute weight matrix according to Guha's paper, without LOQ
+
 ## Reading the data
 ```{r}
 # read the radon data
