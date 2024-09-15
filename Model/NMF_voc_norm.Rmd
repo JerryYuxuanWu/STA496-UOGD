@@ -309,6 +309,37 @@ barplot(W[, 7], names.arg = rownames(transpose_normalized_matrix), main = "Sourc
 barplot(W[, 8], names.arg = rownames(transpose_normalized_matrix), main = "Source Contributions to Basis 8", las=2)
 ```
 
+# William NMF - 4
+```{r}
+# fitting the optimal rank based on the above plots
+# the choice of the optimal rank needs to be discussed
+output <- nmf(transpose_normalized_matrix, rank = 4, weight = weight_matrix, method = "ls-nmf")
+W <- basis(output)
+H <- coef(output)
+```
+
+### Source contributions
+```{r}
+# Plot source contributions for the first basis vector
+nmf4_c1 <- barplot(W[, 1], names.arg = rownames(transpose_normalized_matrix), main = "Source Contributions to Basis 1", las = 2)
+```
+```{r}
+nmf4_c2 <- barplot(W[, 2], names.arg = rownames(transpose_normalized_matrix), main = "Source Contributions to Basis 2", las=2)
+```
+```{r}
+nmf4_c3 <- barplot(W[, 3], names.arg = rownames(transpose_normalized_matrix), main = "Source Contributions to Basis 3", las=2)
+```
+```{r}
+nmf4_c4 <- barplot(W[, 4], names.arg = rownames(transpose_normalized_matrix), main = "Source Contributions to Basis 4", las=2)
+```
+```{r}
+par(mfrow=c(2,2)) 
+nmf4_c1
+nmf4_c2
+nmf4_c3
+nmf4_c4
+```
+
 # NMF - Eva 
 ```{r}
 # Try Eva's approach
