@@ -2,7 +2,9 @@
 title: "NMF"
 author: "William Zhang, Eva, Jerry"
 date: "2024-09-01"
-output: html_document
+output:
+  pdf_document: default
+  html_document: default
 ---
 ```{r setup, warning = FALSE, message = FALSE}
 # load the packages
@@ -210,14 +212,14 @@ summary(hourly_nona_bgrm_zerorepl_norm)
 
 ### Combine and Transpose
 ```{r}
-normalized_matrix <- hourly_nona_bgrm_zerorepl_norm #important: using the normalized VOCs for this file
+normalized_matrix <- as.matrix(hourly_nona_bgrm_zerorepl_norm) #important: using the normalized VOCs for this file
 
 # Transpose <- cbind(Normalized_Data, Merged_VOCs)
 # rownames(Transpose) <- as.character(Transpose[,1]) # I'm not able to run this line, but it shouldn't affect anything
-transpose_normalized_matrix <- t(as.matrix(normalized_matrix))
+# transpose_normalized_matrix <- t(as.matrix(normalized_matrix))
 
-number_row<- dim(transpose_normalized_matrix)[1] #store number of rows (used for checking)
-number_column<- dim(transpose_normalized_matrix)[2] #store number of columns
+number_row<- dim(normalized_matrix)[1] #store number of rows (used for checking)
+number_column<- dim(normalized_matrix)[2] #store number of columns
 ```
 
 ## NMF section
@@ -225,26 +227,29 @@ number_column<- dim(transpose_normalized_matrix)[2] #store number of columns
 # compute weight matrix (uncertainties)
 # Based on the Guha paper
 # next comment is from the other nmf R file
-weight_matrix <- matrix(0, nrow(transpose_normalized_matrix), ncol(transpose_normalized_matrix))
+weight_matrix <- matrix(0, nrow = nrow(normalized_matrix), ncol = ncol(normalized_matrix))
 LOD_merged <- tibble(chemical = c(adjusted_background_non_voc$chemical, adjusted_background_voc$chemical),
                      LOD = c(adjusted_background_non_voc$LOD, adjusted_background_voc$LOD))
 
-LOD_merged <- tibble(chemical = rownames(transpose_normalized_matrix)) %>%
+LOD_merged <- tibble(chemical = names(hourly_nona_bgrm_zerorepl_norm)) %>%
   left_join(LOD_merged)
 
-# creating uncertainty Matrix ???
+# creating uncertainty Matrix
 for (i in 1:number_row) { 
   for (j in 1:number_column) {
-    xij <- transpose_normalized_matrix[i, j]
-    LOD <- LOD_merged$LOD[[i]]  # Get LOD value for this row 
-    if (i == 6){ # based on equation 6, we sqrt ch4 (at row = 6) and times by 1
+    xij <- normalized_matrix[i, j]
+    LOD <- LOD_merged$LOD[[j]]
+    # Get LOD value for this row 
+    if (j == 1) { 
+      # based on equation 6, we sqrt ch4 (at column = 1) and times by 1
       weight_matrix[i, j] <- sqrt(xij)
-    }
-    # row 1 and times 0.25 for co2 
-    if (i == 1){
+    } else if (j == 2) {
+      # 0.25 for co2 
       weight_matrix[i, j] <- 0.25 * sqrt(xij)
-    }
-    else if (xij <= LOD) {
+    } else if (j == 3) { 
+      # 0.5 for CO
+      weight_matrix[i, j] <- 0.5 * sqrt(xij)
+    } else if (xij <= LOD) {
       weight_matrix[i, j] <- 2 * LOD # equation 5a) in reference paper
     } else {
       weight_matrix[i, j] <- sqrt(((0.1 * xij)**2 + LOD**2))  #equation 5c) in reference paper
@@ -255,12 +260,11 @@ for (i in 1:number_row) {
 
 ```{r}
 # set a seed for nmf
-# set.seed(123)
+set.seed(123)
 # #function below used to estimate the optimal rank and will be used in the nmf() function. 
 # # takes around 20-30 mins to run
-# estimate_rank <- nmfEstimateRank(transpose_normalized_matrix, 4:10, method = "ls-nmf", weight = weight_matrix, 30)
+# estimate_rank <- nmfEstimateRank(normalized_matrix, 4:10, method = "ls-nmf", weight = weight_matrix, 30)
 # # changing the range of rank to 2:20 from 4:20
-# # nrun = 5
 # saveRDS(estimate_rank, 'estimate_rank.rds')
 
 estimate_rank <- readRDS('estimate_rank.rds')
@@ -277,67 +281,86 @@ plot(estimate_rank)
 ```{r}
 # fitting the optimal rank based on the above plots
 # the choice of the optimal rank needs to be discussed
-output <- nmf(transpose_normalized_matrix, rank = 8, weight = weight_matrix, method = "ls-nmf")
+output <- nmf(normalized_matrix, rank = 4, weight = weight_matrix, method = "ls-nmf")
 W <- basis(output)
 H <- coef(output)
 ```
 
 ### Source contributions
 ```{r}
-# Plot source contributions for the first basis vector
-barplot(W[, 1], names.arg = rownames(transpose_normalized_matrix), main = "Source Contributions to Basis 1", las = 2)
-```
-```{r}
-barplot(W[, 2], names.arg = rownames(transpose_normalized_matrix), main = "Source Contributions to Basis 2", las=2)
-```
-```{r}
-barplot(W[, 3], names.arg = rownames(transpose_normalized_matrix), main = "Source Contributions to Basis 3", las=2)
-```
-```{r}
-barplot(W[, 4], names.arg = rownames(transpose_normalized_matrix), main = "Source Contributions to Basis 4", las=2)
-```
-```{r}
-barplot(W[, 5], names.arg = rownames(transpose_normalized_matrix), main = "Source Contributions to Basis 5", las=2)
-```
-```{r}
-barplot(W[, 6], names.arg = rownames(transpose_normalized_matrix), main = "Source Contributions to Basis 6", las=2)
-```
-```{r}
-barplot(W[, 7], names.arg = rownames(transpose_normalized_matrix), main = "Source Contributions to Basis 7", las=2)
-```
-```{r}
-barplot(W[, 8], names.arg = rownames(transpose_normalized_matrix), main = "Source Contributions to Basis 8", las=2)
-```
+# Convert H to a data frame for ggplot
+H_df <- as.data.frame(H)
+# Add a column for component
+H_df$Component <- names(as.data.frame(W))
 
-# William NMF - 4
-```{r}
-# fitting the optimal rank based on the above plots
-# the choice of the optimal rank needs to be discussed
-output <- nmf(transpose_normalized_matrix, rank = 4, weight = weight_matrix, method = "ls-nmf")
-W <- basis(output)
-H <- coef(output)
-```
+# Reshape data to long format
+H_long <- pivot_longer(H_df, cols = -Component, names_to = "Chemical", values_to = "Contribution")
 
-### Source contributions
-```{r}
-# Plot source contributions for the first basis vector
-nmf4_c1 <- barplot(W[, 1], names.arg = rownames(transpose_normalized_matrix), main = "Source Contributions to Basis 1", las = 2)
+NFM1 <- subset(H_long, Component == 'V1')
+# Plot
+nmfplt_1_ls <- ggplot(NFM1, aes(x = Chemical, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "orange") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 3, nudge_y = 0.001) +
+  labs(x = "Chemical", y = "Contribution", title = "Component 1 ls-nmf")+
+  theme(
+  text = element_text(size = 14), # Base text size for all text elements
+  axis.title = element_text(size = 16), # Size of axis titles
+  axis.text = element_text(size = 12), # Size of axis text (tick labels)
+  plot.title = element_text(size = 18) # Size of the plot title
+)
+nmfplt_1_ls
 ```
 ```{r}
-nmf4_c2 <- barplot(W[, 2], names.arg = rownames(transpose_normalized_matrix), main = "Source Contributions to Basis 2", las=2)
+NFM2 <- subset(H_long, Component == 'V2')
+# Plot
+nmfplt_2_ls <- ggplot(NFM2, aes(x = Chemical, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "orange") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 3, nudge_y = 0.001) +
+  labs(x = "Chemical", y = "Contribution", title = "Component 2 ls-nmf")+
+  theme(
+  text = element_text(size = 14), # Base text size for all text elements
+  axis.title = element_text(size = 16), # Size of axis titles
+  axis.text = element_text(size = 12), # Size of axis text (tick labels)
+  plot.title = element_text(size = 18) # Size of the plot title
+)
+nmfplt_2_ls
 ```
 ```{r}
-nmf4_c3 <- barplot(W[, 3], names.arg = rownames(transpose_normalized_matrix), main = "Source Contributions to Basis 3", las=2)
+NFM3 <- subset(H_long, Component == 'V3')
+# Plot
+nmfplt_3_ls <- ggplot(NFM3, aes(x = Chemical, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "orange") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 3, nudge_y = 0.001) +
+  labs(x = "Chemical", y = "Contribution", title = "Component 3 ls-nmf")+
+  theme(
+  text = element_text(size = 14), # Base text size for all text elements
+  axis.title = element_text(size = 16), # Size of axis titles
+  axis.text = element_text(size = 12), # Size of axis text (tick labels)
+  plot.title = element_text(size = 18) # Size of the plot title
+)
+nmfplt_3_ls
 ```
 ```{r}
-nmf4_c4 <- barplot(W[, 4], names.arg = rownames(transpose_normalized_matrix), main = "Source Contributions to Basis 4", las=2)
+NFM4 <- subset(H_long, Component == 'V4')
+# Plot
+nmfplt_4_ls <- ggplot(NFM4, aes(x = Chemical, y = Contribution)) +
+  geom_bar(stat = "identity", position = "dodge", fill = "orange") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 3, nudge_y = 0.001) +
+  labs(x = "Chemical", y = "Contribution", title = "Component 4 ls-nmf")+
+  theme(
+  text = element_text(size = 14), # Base text size for all text elements
+  axis.title = element_text(size = 16), # Size of axis titles
+  axis.text = element_text(size = 12), # Size of axis text (tick labels)
+  plot.title = element_text(size = 18) # Size of the plot title
+)
+nmfplt_4_ls
 ```
-```{r}
-par(mfrow=c(2,2)) 
-nmf4_c1
-nmf4_c2
-nmf4_c3
-nmf4_c4
+```{r, eval=TRUE, echo = FALSE, fig.height=15, fig.width=20}
+grid.arrange(nmfplt_1_ls, nmfplt_2_ls, nmfplt_3_ls, nmfplt_4_ls, ncol=2)
 ```
 
 # NMF - Eva 
@@ -348,9 +371,9 @@ errors <- numeric(length(components) - 4)
 
 # Loop over the number of components
 # for (n in components) {
-#   nmf_result <- nmf(t(transpose_normalized_matrix), rank = n, method = "KL", seed='nndsvd')
+#   nmf_result <- nmf(normalized_matrix, rank = n, method = "KL", seed='nndsvd')
 #   reconstruction <- basis(nmf_result) %*% coef(nmf_result)
-#   error <- norm(t(transpose_normalized_matrix) - reconstruction, type = "F")
+#   error <- norm(normalized_matrix - reconstruction, type = "F")
 #   errors[n-3] <- error
 #   print(paste0('Completed ', n - 3, ' out of 7'))
 # }
@@ -381,7 +404,7 @@ rankerror4
 
 ```{r, eval=TRUE, echo = F}
 # Apply NMF
-nmf_result <- nmf(t(transpose_normalized_matrix), rank = 4, method = "KL", seed='nndsvd')
+nmf_result <- nmf(normalized_matrix, rank = 4, method = "KL", seed='nndsvd')
 
 # Examine the basis matrix (W)
 basis_matrix <- basis(nmf_result)
@@ -404,35 +427,35 @@ image(coef_matrix, main = "Coefficient Matrix (H)")
 # Convert H to a data frame for ggplot
 H_df <- as.data.frame(coef_matrix)
 # Add a column for chemicals
-H_df$Chemical <- rownames(H_df)
+H_df$Component <- rownames(H_df)
 
 # Reshape data to long format
-H_long <- pivot_longer(H_df, cols = -Chemical, names_to = "Component", values_to = "Contribution")
+H_long <- pivot_longer(H_df, cols = -Component, names_to = "Chemical", values_to = "Contribution")
 
-NFM1 <- subset(H_long, Chemical == '1')
+NFM1 <- subset(H_long, Component == '1')
 # Plot
-nfmplt_1 <- ggplot(NFM1, aes(x = Component, y = Contribution)) +
+nmfplt_1_svd <- ggplot(NFM1, aes(x = Chemical, y = Contribution)) +
   geom_bar(stat = "identity", position = "dodge", fill = "orange") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 4, nudge_y = 0.1) +
-  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components1")+
+  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 3, nudge_y = 0.1) +
+  labs(x = "Chemical", y = "Contribution", title = "Component 1 KL nndsvd")+
   theme(
   text = element_text(size = 14), # Base text size for all text elements
   axis.title = element_text(size = 16), # Size of axis titles
   axis.text = element_text(size = 12), # Size of axis text (tick labels)
   plot.title = element_text(size = 18) # Size of the plot title
 )
-nfmplt_1
+nmfplt_1_svd
 ```
 
 ```{r, eval=TRUE, echo = T, include=FALSE}
-NFM2 <- subset(H_long, Chemical == '2')
+NFM2 <- subset(H_long, Component == '2')
 # Plot
-nfmplt_2 <- ggplot(NFM2, aes(x = Component, y = Contribution)) +
+nmfplt_2_svd <- ggplot(NFM2, aes(x = Chemical, y = Contribution)) +
   geom_bar(stat = "identity", position = "dodge", fill ="orange") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 4, nudge_y = 0.1) +
-  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components2")+
+  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 3, nudge_y = 0.1) +
+  labs(x = "Chemical", y = "Contribution", title = "Component 2 KL nndsvd")+
   theme(
   text = element_text(size = 14), # Base text size for all text elements
   axis.title = element_text(size = 16), # Size of axis titles
@@ -440,13 +463,13 @@ nfmplt_2 <- ggplot(NFM2, aes(x = Component, y = Contribution)) +
   plot.title = element_text(size = 18) # Size of the plot title
 )
 
-NFM3 <- subset(H_long, Chemical == '3')
+NFM3 <- subset(H_long, Component == '3')
 # Plot
-nfmplt_3 <- ggplot(NFM3, aes(x = Component, y = Contribution)) +
+nmfplt_3_svd <- ggplot(NFM3, aes(x = Chemical, y = Contribution)) +
   geom_bar(stat = "identity", position = "dodge", fill = "orange") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 4, nudge_y = 0.1) +
-  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components3")+
+  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 3, nudge_y = 0.1) +
+  labs(x = "Chemical", y = "Contribution", title = "Component 3 KL nndsvd")+
   theme(
   text = element_text(size = 14), # Base text size for all text elements
   axis.title = element_text(size = 16), # Size of axis titles
@@ -454,13 +477,13 @@ nfmplt_3 <- ggplot(NFM3, aes(x = Component, y = Contribution)) +
   plot.title = element_text(size = 18) # Size of the plot title
 )
 
-NFM4 <- subset(H_long, Chemical == '4')
+NFM4 <- subset(H_long, Component == '4')
 # Plot
-nfmplt_4 <- ggplot(NFM4, aes(x = Component, y = Contribution)) +
+nmfplt_4_svd <- ggplot(NFM4, aes(x = Chemical, y = Contribution)) +
   geom_bar(stat = "identity", position = "dodge", fill = "orange") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 4, nudge_y = 0.1) +
-  labs(x = "Chemical", y = "Contribution", title = "Contribution of Each Chemical to NMF Components4")+
+  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 3, nudge_y = 0.1) +
+  labs(x = "Chemical", y = "Contribution", title = "Component 4 KL nndsvd")+
   theme(
   text = element_text(size = 14), # Base text size for all text elements
   axis.title = element_text(size = 16), # Size of axis titles
@@ -470,5 +493,24 @@ nfmplt_4 <- ggplot(NFM4, aes(x = Component, y = Contribution)) +
 ```
 
 ```{r, eval=TRUE, echo = FALSE, fig.height=15, fig.width=20}
-grid.arrange(nfmplt_1, nfmplt_2, nfmplt_3, nfmplt_4, ncol=2)
+grid.arrange(nmfplt_1_svd, nmfplt_2_svd, nmfplt_3_svd, nmfplt_4_svd, ncol=2)
 ```
+
+```{r, eval=TRUE, echo = FALSE, fig.height=15, fig.width=20, fig.cap='ls-nmf'}
+grid.arrange(nmfplt_1_ls, nmfplt_2_ls, nmfplt_3_ls, nmfplt_4_ls, ncol=2)
+```
+
+```{r, fig.height=8, fig.width=20}
+grid.arrange(nmfplt_2_ls, nmfplt_1_svd, ncol = 2)
+```
+```{r, fig.height=8, fig.width=20}
+grid.arrange(nmfplt_1_ls, nmfplt_2_svd, ncol = 2)
+```
+```{r, fig.height=8, fig.width=20}
+grid.arrange(nmfplt_3_ls, nmfplt_4_svd, ncol = 2)
+```
+
+```{r, fig.height=8, fig.width=20}
+grid.arrange(nmfplt_4_ls, nmfplt_3_svd, ncol = 2)
+```
+
