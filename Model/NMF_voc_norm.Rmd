@@ -260,7 +260,7 @@ for (i in 1:number_row) {
 
 ```{r}
 # set a seed for nmf
-set.seed(123)
+# set.seed(123)
 # #function below used to estimate the optimal rank and will be used in the nmf() function. 
 # # takes around 20-30 mins to run
 # estimate_rank <- nmfEstimateRank(normalized_matrix, 4:10, method = "ls-nmf", weight = weight_matrix, 30)
@@ -492,25 +492,26 @@ nmfplt_4_svd <- ggplot(NFM4, aes(x = Chemical, y = Contribution)) +
 )
 ```
 
-```{r, eval=TRUE, echo = FALSE, fig.height=15, fig.width=20}
+```{r, eval=TRUE, echo = FALSE, fig.height=15, fig.width=16}
 grid.arrange(nmfplt_1_svd, nmfplt_2_svd, nmfplt_3_svd, nmfplt_4_svd, ncol=2)
 ```
+\newpage
 
-```{r, eval=TRUE, echo = FALSE, fig.height=15, fig.width=20, fig.cap='ls-nmf'}
-grid.arrange(nmfplt_1_ls, nmfplt_2_ls, nmfplt_3_ls, nmfplt_4_ls, ncol=2)
-```
+# Method comparisons
 
-```{r, fig.height=8, fig.width=20}
-grid.arrange(nmfplt_2_ls, nmfplt_1_svd, ncol = 2)
+
+```{r, fig.height=8, fig.width=16}
+grid.arrange(nmfplt_1_ls, nmfplt_3_svd, ncol = 2)
 ```
-```{r, fig.height=8, fig.width=20}
-grid.arrange(nmfplt_1_ls, nmfplt_2_svd, ncol = 2)
-```
-```{r, fig.height=8, fig.width=20}
-grid.arrange(nmfplt_3_ls, nmfplt_4_svd, ncol = 2)
+```{r, fig.height=8, fig.width=16}
+grid.arrange(nmfplt_2_ls, nmfplt_2_svd, ncol = 2)
 ```
 
-```{r, fig.height=8, fig.width=20}
-grid.arrange(nmfplt_4_ls, nmfplt_3_svd, ncol = 2)
+```{r, fig.height=8, fig.width=16}
+grid.arrange(nmfplt_3_ls, nmfplt_1_svd, ncol = 2)
+```
+
+```{r, fig.height=8, fig.width=16}
+grid.arrange(nmfplt_4_ls, nmfplt_4_svd, ncol = 2)
 ```
 
