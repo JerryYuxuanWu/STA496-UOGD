@@ -35,13 +35,14 @@ hourly_data <- readRDS("../DataProcessing/Trailer_hourly_merge_20240905.rds")
 hourly_nona <- hourly_data %>% select(-c(temp_bb,rhi, esf_bb, distToLovi,inv_dist, 
                                          distToLovi_wells, monthly_oil, monthly_gas)) %>% na.omit()
 
-# retrieving the vocs, removing everything else except the vocs
-hourly_vocs <- hourly_nona %>% select(c("ethane", "ethene", "propane", "propene",
+vocs <- c("ethane", "ethene", "propane", "propene",
                                         "1_3-butadiene", "i-butane", "n-butane",
                                         "acetylene", "cyclopentane", "i-pentane",
                                         "n-pentane", "n-hexane", "isoprene", "n-heptane",
                                         "benzene", "n-octane", "toluene", "ethyl-benzene", 
-                                        "m&p-xylene", "o-xylene"))
+                                        "m&p-xylene", "o-xylene")
+# retrieving the vocs, removing everything else except the vocs
+hourly_vocs <- hourly_nona %>% select(any_of(vocs))
 
 # retrieving the non-vocs: co2_ppm, nox, ch4, h2s, so2, o3
 # double check this
@@ -55,6 +56,55 @@ hourly_dates <- hourly_nona %>%
   mutate(yearmonth = substring(day, 0, 7)) %>%
   pull(yearmonth)
 ``` 
+## Data visualisation
+```{r fig.height=10}
+for (compound in non_vocs) {
+  assign(paste0(compound, '_boxplot'), 
+         ggplot(hourly_non_vocs) +
+           geom_boxplot(aes(y = .data[[compound]])) +
+           labs(x = compound, y = '') +
+           theme_minimal())
+}
+
+grid.arrange(ch4_boxplot, co2_ppm_boxplot, co_boxplot, nrow = 1)
+```
+
+```{r fig.height=10}
+grid.arrange(h2s_boxplot, so2_boxplot, nox_boxplot, o3_boxplot, nrow = 1)
+```
+
+```{r}
+for (compound in vocs) {
+  assign(paste0(compound, '_boxplot'), 
+         ggplot(hourly_vocs) +
+           geom_boxplot(aes(y = .data[[compound]])) +
+           labs(x = compound, y = '') +
+           theme_minimal())
+}
+grid.arrange(get(paste0(vocs[1], '_boxplot')), get(paste0(vocs[2], '_boxplot')), 
+             get(paste0(vocs[3], '_boxplot')), get(paste0(vocs[4], '_boxplot')), nrow = 1)
+```
+
+```{r}
+grid.arrange(get(paste0(vocs[5], '_boxplot')), get(paste0(vocs[6], '_boxplot')), 
+             get(paste0(vocs[7], '_boxplot')), get(paste0(vocs[8], '_boxplot')), nrow = 1)
+```
+
+```{r}
+grid.arrange(get(paste0(vocs[9], '_boxplot')), get(paste0(vocs[10], '_boxplot')), 
+             get(paste0(vocs[11], '_boxplot')), get(paste0(vocs[12], '_boxplot')), nrow = 1)
+```
+
+```{r}
+grid.arrange(get(paste0(vocs[13], '_boxplot')), get(paste0(vocs[14], '_boxplot')), 
+             get(paste0(vocs[15], '_boxplot')), get(paste0(vocs[16], '_boxplot')), nrow = 1)
+```
+
+```{r}
+grid.arrange(get(paste0(vocs[17], '_boxplot')), get(paste0(vocs[18], '_boxplot')), 
+             get(paste0(vocs[19], '_boxplot')), get(paste0(vocs[20], '_boxplot')), nrow = 1)
+```
+
 ### Data preprocessing
 ```{r, message = FALSE}
 # Define LOD for each chemical
@@ -96,14 +146,16 @@ get_info <- function(column) {
   background <- quantile(column, 0)
   quantile1 <- quantile(column, 0.01)
   quantile99 <- quantile(column, 0.99)
-  return(c(N, quantile1, quantile99, background))
+  n_background <- sum(column == background)
+  max <- max(column)
+  return(c(N, quantile1, quantile99, max, background, n_background))
 }
 
 info_table <- hourly_full_nona %>%
   reframe(across(everything(), ~ get_info(.x)))
 
 info_table <- info_table %>%  
-  mutate(rownames = c('N', '1st percentile', '99th percentile', 'Background')) %>%
+  mutate(rownames = c('N', '1st percentile', '99th percentile', 'Max', 'Background', '# Background')) %>%
   pivot_longer(-rownames) %>%   
   pivot_wider(names_from = rownames, values_from = value) 
 
@@ -199,7 +251,7 @@ hourly_nona_bgrm_zerorepl <- hourly_nona_bgrm_zerorepl %>%
 #normalizing function
 normalize_column <- function(column){
   background <- quantile(column, 0)
-  max <- quantile(column, 0.99)
+  max <- quantile(column, 1) # this could be adjusted
   return ((column - background)/(max - background))
 }
 ```
@@ -263,8 +315,8 @@ for (i in 1:number_row) {
 # set.seed(123)
 # #function below used to estimate the optimal rank and will be used in the nmf() function. 
 # # takes around 20-30 mins to run
-# estimate_rank <- nmfEstimateRank(normalized_matrix, 4:10, method = "ls-nmf", weight = weight_matrix, 30)
-# # changing the range of rank to 2:20 from 4:20
+# estimate_rank <- nmfEstimateRank(normalized_matrix, 4:8, method = "ls-nmf", weight = weight_matrix, 30)
+# # # changing the range of rank to 2:20 from 4:20
 # saveRDS(estimate_rank, 'estimate_rank.rds')
 
 estimate_rank <- readRDS('estimate_rank.rds')
@@ -296,67 +348,30 @@ H_df$Component <- names(as.data.frame(W))
 # Reshape data to long format
 H_long <- pivot_longer(H_df, cols = -Component, names_to = "Chemical", values_to = "Contribution")
 
-NFM1 <- subset(H_long, Component == 'V1')
-# Plot
-nmfplt_1_ls <- ggplot(NFM1, aes(x = Chemical, y = Contribution)) +
-  geom_bar(stat = "identity", position = "dodge", fill = "orange") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 3, nudge_y = 0.001) +
-  labs(x = "Chemical", y = "Contribution", title = "Component 1 ls-nmf")+
-  theme(
-  text = element_text(size = 14), # Base text size for all text elements
-  axis.title = element_text(size = 16), # Size of axis titles
-  axis.text = element_text(size = 12), # Size of axis text (tick labels)
-  plot.title = element_text(size = 18) # Size of the plot title
-)
+get_component_plot <- function(data, component, title) {
+  component_data <- subset(data, Component == component)
+  plot <- ggplot(component_data, aes(x = Chemical, y = Contribution)) +
+            geom_bar(stat = "identity", position = "dodge", fill = "orange") +
+            theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+            geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 3, nudge_y = 0.1) +
+            labs(x = "Chemical", y = "Contribution", title = title)+
+            theme(
+            text = element_text(size = 14), # Base text size for all text elements
+            axis.title = element_text(size = 16), # Size of axis titles
+            axis.text = element_text(size = 12), # Size of axis text (tick labels)
+            plot.title = element_text(size = 18) # Size of the plot title
+            )
+  return(plot)
+}
+nmfplt_1_ls <- get_component_plot(H_long, 'V1', 'Component 1 ls-nmf Full')
 nmfplt_1_ls
 ```
 ```{r}
-NFM2 <- subset(H_long, Component == 'V2')
-# Plot
-nmfplt_2_ls <- ggplot(NFM2, aes(x = Chemical, y = Contribution)) +
-  geom_bar(stat = "identity", position = "dodge", fill = "orange") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 3, nudge_y = 0.001) +
-  labs(x = "Chemical", y = "Contribution", title = "Component 2 ls-nmf")+
-  theme(
-  text = element_text(size = 14), # Base text size for all text elements
-  axis.title = element_text(size = 16), # Size of axis titles
-  axis.text = element_text(size = 12), # Size of axis text (tick labels)
-  plot.title = element_text(size = 18) # Size of the plot title
-)
+nmfplt_2_ls <- get_component_plot(H_long, 'V2', 'Component 2 ls-nmf Full')
 nmfplt_2_ls
-```
-```{r}
-NFM3 <- subset(H_long, Component == 'V3')
-# Plot
-nmfplt_3_ls <- ggplot(NFM3, aes(x = Chemical, y = Contribution)) +
-  geom_bar(stat = "identity", position = "dodge", fill = "orange") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 3, nudge_y = 0.001) +
-  labs(x = "Chemical", y = "Contribution", title = "Component 3 ls-nmf")+
-  theme(
-  text = element_text(size = 14), # Base text size for all text elements
-  axis.title = element_text(size = 16), # Size of axis titles
-  axis.text = element_text(size = 12), # Size of axis text (tick labels)
-  plot.title = element_text(size = 18) # Size of the plot title
-)
+nmfplt_3_ls <- get_component_plot(H_long, 'V3', 'Component 3 ls-nmf Full')
 nmfplt_3_ls
-```
-```{r}
-NFM4 <- subset(H_long, Component == 'V4')
-# Plot
-nmfplt_4_ls <- ggplot(NFM4, aes(x = Chemical, y = Contribution)) +
-  geom_bar(stat = "identity", position = "dodge", fill = "orange") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 3, nudge_y = 0.001) +
-  labs(x = "Chemical", y = "Contribution", title = "Component 4 ls-nmf")+
-  theme(
-  text = element_text(size = 14), # Base text size for all text elements
-  axis.title = element_text(size = 16), # Size of axis titles
-  axis.text = element_text(size = 12), # Size of axis text (tick labels)
-  plot.title = element_text(size = 18) # Size of the plot title
-)
+nmfplt_4_ls <- get_component_plot(H_long, 'V4', 'Component 4 ls-nmf Full')
 nmfplt_4_ls
 ```
 ```{r, eval=TRUE, echo = FALSE, fig.height=15, fig.width=20}
@@ -419,7 +434,6 @@ par(mfrow = c(1, 2))
 image(basis_matrix, main = "Basis Matrix (W)")
 # Coefficient matrix
 image(coef_matrix, main = "Coefficient Matrix (H)")
-
 ```
 
 
@@ -432,64 +446,15 @@ H_df$Component <- rownames(H_df)
 # Reshape data to long format
 H_long <- pivot_longer(H_df, cols = -Component, names_to = "Chemical", values_to = "Contribution")
 
-NFM1 <- subset(H_long, Component == '1')
 # Plot
-nmfplt_1_svd <- ggplot(NFM1, aes(x = Chemical, y = Contribution)) +
-  geom_bar(stat = "identity", position = "dodge", fill = "orange") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 3, nudge_y = 0.1) +
-  labs(x = "Chemical", y = "Contribution", title = "Component 1 KL nndsvd")+
-  theme(
-  text = element_text(size = 14), # Base text size for all text elements
-  axis.title = element_text(size = 16), # Size of axis titles
-  axis.text = element_text(size = 12), # Size of axis text (tick labels)
-  plot.title = element_text(size = 18) # Size of the plot title
-)
+nmfplt_1_svd <- get_component_plot(H_long, '1', 'Component 1 nndsvd Full')
 nmfplt_1_svd
 ```
 
 ```{r, eval=TRUE, echo = T, include=FALSE}
-NFM2 <- subset(H_long, Component == '2')
-# Plot
-nmfplt_2_svd <- ggplot(NFM2, aes(x = Chemical, y = Contribution)) +
-  geom_bar(stat = "identity", position = "dodge", fill ="orange") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 3, nudge_y = 0.1) +
-  labs(x = "Chemical", y = "Contribution", title = "Component 2 KL nndsvd")+
-  theme(
-  text = element_text(size = 14), # Base text size for all text elements
-  axis.title = element_text(size = 16), # Size of axis titles
-  axis.text = element_text(size = 12), # Size of axis text (tick labels)
-  plot.title = element_text(size = 18) # Size of the plot title
-)
-
-NFM3 <- subset(H_long, Component == '3')
-# Plot
-nmfplt_3_svd <- ggplot(NFM3, aes(x = Chemical, y = Contribution)) +
-  geom_bar(stat = "identity", position = "dodge", fill = "orange") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 3, nudge_y = 0.1) +
-  labs(x = "Chemical", y = "Contribution", title = "Component 3 KL nndsvd")+
-  theme(
-  text = element_text(size = 14), # Base text size for all text elements
-  axis.title = element_text(size = 16), # Size of axis titles
-  axis.text = element_text(size = 12), # Size of axis text (tick labels)
-  plot.title = element_text(size = 18) # Size of the plot title
-)
-
-NFM4 <- subset(H_long, Component == '4')
-# Plot
-nmfplt_4_svd <- ggplot(NFM4, aes(x = Chemical, y = Contribution)) +
-  geom_bar(stat = "identity", position = "dodge", fill = "orange") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  geom_text(aes(label = sprintf("%.3f", Contribution)), color = "blue", size = 3, nudge_y = 0.1) +
-  labs(x = "Chemical", y = "Contribution", title = "Component 4 KL nndsvd")+
-  theme(
-  text = element_text(size = 14), # Base text size for all text elements
-  axis.title = element_text(size = 16), # Size of axis titles
-  axis.text = element_text(size = 12), # Size of axis text (tick labels)
-  plot.title = element_text(size = 18) # Size of the plot title
-)
+nmfplt_2_svd <- get_component_plot(H_long, '2', 'Component 2 nndsvd Full')
+nmfplt_3_svd <- get_component_plot(H_long, '3', 'Component 3 nndsvd Full')
+nmfplt_4_svd <- get_component_plot(H_long, '4', 'Component 4 nndsvd Full')
 ```
 
 ```{r, eval=TRUE, echo = FALSE, fig.height=15, fig.width=16}
@@ -498,11 +463,10 @@ grid.arrange(nmfplt_1_svd, nmfplt_2_svd, nmfplt_3_svd, nmfplt_4_svd, ncol=2)
 \newpage
 
 # Method comparisons
-
-
 ```{r, fig.height=8, fig.width=16}
 grid.arrange(nmfplt_1_ls, nmfplt_3_svd, ncol = 2)
 ```
+
 ```{r, fig.height=8, fig.width=16}
 grid.arrange(nmfplt_2_ls, nmfplt_2_svd, ncol = 2)
 ```
@@ -515,3 +479,158 @@ grid.arrange(nmfplt_3_ls, nmfplt_1_svd, ncol = 2)
 grid.arrange(nmfplt_4_ls, nmfplt_4_svd, ncol = 2)
 ```
 
+# Remove Ozone
+## 4 Components
+```{r}
+normalized_matrix_less_o3 <- normalized_matrix[ ,setdiff(colnames(normalized_matrix), "o3")]
+
+nmf_result_4c_less_o3 <- nmf(normalized_matrix_less_o3, rank = 4, method = "KL", seed='nndsvd')
+
+basis_matrix_4c_less_o3 <- basis(nmf_result_4c_less_o3)
+coef_matrix_4c_less_o3 <- coef(nmf_result_4c_less_o3)
+
+par(mfrow = c(1, 2))
+image(basis_matrix_4c_less_o3, main = "Basis Matrix (W)")
+image(coef_matrix_4c_less_o3, main = "Coefficient Matrix (H)")
+```
+```{r, eval=TRUE, echo = T, include=FALSE}
+# Convert H to a data frame for ggplot
+H_df_4c_less_o3 <- as.data.frame(coef_matrix_4c_less_o3)
+# Add a column for chemicals
+H_df_4c_less_o3$Component <- rownames(H_df_4c_less_o3)
+
+# Reshape data to long format
+H_long_4c_less_o3 <- pivot_longer(H_df_4c_less_o3, cols = -Component, names_to = "Chemical", values_to = "Contribution")
+
+# Plot
+nmfplt_1_svd_4c_less_o3 <- get_component_plot(H_long_4c_less_o3, 
+                                           '1', 'Component 1 nndsvd Less ozone, 4C')
+nmfplt_2_svd_4c_less_o3 <- get_component_plot(H_long_4c_less_o3, 
+                                           '2', 'Component 2 nndsvd Less ozone, 4C')
+nmfplt_3_svd_4c_less_o3 <- get_component_plot(H_long_4c_less_o3, 
+                                           '3', 'Component 3 nndsvd Less ozone, 4C')
+nmfplt_4_svd_4c_less_o3 <- get_component_plot(H_long_4c_less_o3, 
+                                           '4', 'Component 4 nndsvd Less ozone, 4C')
+```
+
+```{r, eval=TRUE, echo = FALSE, fig.height=15, fig.width=16}
+grid.arrange(nmfplt_1_svd_4c_less_o3, nmfplt_2_svd_4c_less_o3, nmfplt_3_svd_4c_less_o3, nmfplt_4_svd_4c_less_o3, ncol=2)
+```
+## 5 Components
+```{r}
+nmf_result_5c_less_o3 <- nmf(normalized_matrix_less_o3, rank = 5, method = "KL", seed='nndsvd')
+
+basis_matrix_5c_less_o3 <- basis(nmf_result_5c_less_o3)
+coef_matrix_5c_less_o3 <- coef(nmf_result_5c_less_o3)
+
+par(mfrow = c(1, 2))
+image(basis_matrix_5c_less_o3, main = "Basis Matrix (W)")
+image(coef_matrix_5c_less_o3, main = "Coefficient Matrix (H)")
+```
+```{r, eval=TRUE, echo = T, include=FALSE}
+# Convert H to a data frame for ggplot
+H_df_5c_less_o3 <- as.data.frame(coef_matrix_5c_less_o3)
+# Add a column for chemicals
+H_df_5c_less_o3$Component <- rownames(H_df_5c_less_o3)
+
+# Reshape data to long format
+H_long_5c_less_o3 <- pivot_longer(H_df_5c_less_o3, cols = -Component, names_to = "Chemical", values_to = "Contribution")
+
+# Plot
+nmfplt_1_svd_5c_less_o3 <- get_component_plot(H_long_5c_less_o3, 
+                                           '1', 'Component 1 nndsvd Less ozone, 5c')
+nmfplt_2_svd_5c_less_o3 <- get_component_plot(H_long_5c_less_o3, 
+                                           '2', 'Component 2 nndsvd Less ozone, 5c')
+nmfplt_3_svd_5c_less_o3 <- get_component_plot(H_long_5c_less_o3, 
+                                           '3', 'Component 3 nndsvd Less ozone, 5c')
+nmfplt_4_svd_5c_less_o3 <- get_component_plot(H_long_5c_less_o3, 
+                                           '4', 'Component 4 nndsvd Less ozone, 5c')
+nmfplt_5_svd_5c_less_o3 <- get_component_plot(H_long_5c_less_o3, 
+                                           '5', 'Component 5 nndsvd Less ozone, 5c')
+```
+
+```{r, eval=TRUE, echo = FALSE, fig.height=15, fig.width=16}
+grid.arrange(nmfplt_1_svd_5c_less_o3, nmfplt_2_svd_5c_less_o3, nmfplt_3_svd_5c_less_o3, nmfplt_4_svd_5c_less_o3, nmfplt_5_svd_5c_less_o3, ncol=2)
+```
+Compare to 4 components
+```{r, eval=TRUE, echo = FALSE, fig.height=15, fig.width=16}
+grid.arrange(nmfplt_1_svd_4c_less_o3, nmfplt_2_svd_4c_less_o3, nmfplt_3_svd_4c_less_o3, nmfplt_4_svd_4c_less_o3, ncol=2)
+```
+# Remove Ozone + chemicals with more than 500+ background values
+## 4 Components
+```{r}
+normalized_matrix_less_o3_lotbg <- normalized_matrix[ ,setdiff(colnames(normalized_matrix), c('o3', 'h2s', 'so2', '1_3-butadiene', 'isoprene', 'ethyl-benzene', 'm&p-xylene', 'o-xylene'))]
+
+nmf_result_4c_less_o3_lotbg <- nmf(normalized_matrix_less_o3_lotbg, rank = 4, method = "KL", seed='nndsvd')
+
+basis_matrix_4c_less_o3_lotbg <- basis(nmf_result_4c_less_o3_lotbg)
+coef_matrix_4c_less_o3_lotbg <- coef(nmf_result_4c_less_o3_lotbg)
+
+par(mfrow = c(1, 2))
+image(basis_matrix_4c_less_o3_lotbg, main = "Basis Matrix (W)")
+image(coef_matrix_4c_less_o3_lotbg, main = "Coefficient Matrix (H)")
+```
+```{r, eval=TRUE, echo = T, include=FALSE}
+# Convert H to a data frame for ggplot
+H_df_4c_less_o3_lotbg <- as.data.frame(coef_matrix_4c_less_o3_lotbg)
+# Add a column for chemicals
+H_df_4c_less_o3_lotbg$Component <- rownames(H_df_4c_less_o3_lotbg)
+
+# Reshape data to long format
+H_long_4c_less_o3_lotbg <- pivot_longer(H_df_4c_less_o3_lotbg, cols = -Component, names_to = "Chemical", values_to = "Contribution")
+
+# Plot
+nmfplt_1_svd_4c_less_o3_lotbg <- get_component_plot(H_long_4c_less_o3_lotbg, 
+                                           '1', 'Component 1 nndsvd Less ozone, lot bg, 4C')
+nmfplt_2_svd_4c_less_o3_lotbg <- get_component_plot(H_long_4c_less_o3_lotbg, 
+                                           '2', 'Component 2 nndsvd Less ozone, lot bg, 4C')
+nmfplt_3_svd_4c_less_o3_lotbg <- get_component_plot(H_long_4c_less_o3_lotbg, 
+                                           '3', 'Component 3 nndsvd Less ozone, lot bg, 4C')
+nmfplt_4_svd_4c_less_o3_lotbg <- get_component_plot(H_long_4c_less_o3_lotbg, 
+                                           '4', 'Component 4 nndsvd Less ozone, lot bg, 4C')
+```
+
+```{r, eval=TRUE, echo = FALSE, fig.height=15, fig.width=16}
+grid.arrange(nmfplt_1_svd_4c_less_o3_lotbg, nmfplt_2_svd_4c_less_o3_lotbg, nmfplt_3_svd_4c_less_o3_lotbg, nmfplt_4_svd_4c_less_o3_lotbg, ncol=2)
+```
+## 5 Components
+```{r}
+nmf_result_5c_less_o3_lotbg <- nmf(normalized_matrix_less_o3_lotbg, rank = 5, method = "KL", seed='nndsvd')
+
+basis_matrix_5c_less_o3_lotbg <- basis(nmf_result_5c_less_o3_lotbg)
+coef_matrix_5c_less_o3_lotbg <- coef(nmf_result_5c_less_o3_lotbg)
+
+par(mfrow = c(1, 2))
+image(basis_matrix_5c_less_o3_lotbg, main = "Basis Matrix (W)")
+image(coef_matrix_5c_less_o3_lotbg, main = "Coefficient Matrix (H)")
+```
+```{r, eval=TRUE, echo = T, include=FALSE}
+# Convert H to a data frame for ggplot
+H_df_5c_less_o3_lotbg <- as.data.frame(coef_matrix_5c_less_o3_lotbg)
+# Add a column for chemicals
+H_df_5c_less_o3_lotbg$Component <- rownames(H_df_5c_less_o3_lotbg)
+
+# Reshape data to long format
+H_long_5c_less_o3_lotbg <- pivot_longer(H_df_5c_less_o3_lotbg, cols = -Component, names_to = "Chemical", values_to = "Contribution")
+
+# Plot
+nmfplt_1_svd_5c_less_o3_lotbg <- get_component_plot(H_long_5c_less_o3_lotbg, 
+                                           '1', 'Component 1 nndsvd Less ozone, lot bg, 5c')
+nmfplt_2_svd_5c_less_o3_lotbg <- get_component_plot(H_long_5c_less_o3_lotbg, 
+                                           '2', 'Component 2 nndsvd Less ozone, lot bg, 5c')
+nmfplt_3_svd_5c_less_o3_lotbg <- get_component_plot(H_long_5c_less_o3_lotbg, 
+                                           '3', 'Component 3 nndsvd Less ozone, lot bg, 5c')
+nmfplt_4_svd_5c_less_o3_lotbg <- get_component_plot(H_long_5c_less_o3_lotbg, 
+                                           '4', 'Component 4 nndsvd Less ozone, lot bg, 5c')
+nmfplt_5_svd_5c_less_o3_lotbg <- get_component_plot(H_long_5c_less_o3_lotbg, 
+                                           '5', 'Component 5 nndsvd Less ozone, lot bg, 5c')
+```
+
+```{r, eval=TRUE, echo = FALSE, fig.height=15, fig.width=16}
+grid.arrange(nmfplt_1_svd_5c_less_o3_lotbg, nmfplt_2_svd_5c_less_o3_lotbg, nmfplt_3_svd_5c_less_o3_lotbg, nmfplt_4_svd_5c_less_o3_lotbg, nmfplt_5_svd_5c_less_o3_lotbg, ncol=2)
+```
+Compare to 4 components
+
+```{r, eval=TRUE, echo = FALSE, fig.height=15, fig.width=16}
+grid.arrange(nmfplt_1_svd_4c_less_o3_lotbg, nmfplt_2_svd_4c_less_o3_lotbg, nmfplt_3_svd_4c_less_o3_lotbg, nmfplt_4_svd_4c_less_o3_lotbg, ncol=2)
+```
