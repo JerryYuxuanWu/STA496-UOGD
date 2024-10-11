@@ -480,6 +480,7 @@ grid.arrange(nmfplt_4_ls, nmfplt_4_svd, ncol = 2)
 ```
 
 # Remove Ozone
+
 ## 4 Components
 ```{r}
 normalized_matrix_less_o3 <- normalized_matrix[ ,setdiff(colnames(normalized_matrix), "o3")]
@@ -516,6 +517,7 @@ nmfplt_4_svd_4c_less_o3 <- get_component_plot(H_long_4c_less_o3,
 ```{r, eval=TRUE, echo = FALSE, fig.height=15, fig.width=16}
 grid.arrange(nmfplt_1_svd_4c_less_o3, nmfplt_2_svd_4c_less_o3, nmfplt_3_svd_4c_less_o3, nmfplt_4_svd_4c_less_o3, ncol=2)
 ```
+
 ## 5 Components
 ```{r}
 nmf_result_5c_less_o3 <- nmf(normalized_matrix_less_o3, rank = 5, method = "KL", seed='nndsvd')
@@ -552,10 +554,13 @@ nmfplt_5_svd_5c_less_o3 <- get_component_plot(H_long_5c_less_o3,
 ```{r, eval=TRUE, echo = FALSE, fig.height=15, fig.width=16}
 grid.arrange(nmfplt_1_svd_5c_less_o3, nmfplt_2_svd_5c_less_o3, nmfplt_3_svd_5c_less_o3, nmfplt_4_svd_5c_less_o3, nmfplt_5_svd_5c_less_o3, ncol=2)
 ```
-Compare to 4 components
+
+### Compare to 4 components
+
 ```{r, eval=TRUE, echo = FALSE, fig.height=15, fig.width=16}
 grid.arrange(nmfplt_1_svd_4c_less_o3, nmfplt_2_svd_4c_less_o3, nmfplt_3_svd_4c_less_o3, nmfplt_4_svd_4c_less_o3, ncol=2)
 ```
+
 # Remove Ozone + chemicals with more than 500+ background values
 ## 4 Components
 ```{r}
@@ -593,6 +598,7 @@ nmfplt_4_svd_4c_less_o3_lotbg <- get_component_plot(H_long_4c_less_o3_lotbg,
 ```{r, eval=TRUE, echo = FALSE, fig.height=15, fig.width=16}
 grid.arrange(nmfplt_1_svd_4c_less_o3_lotbg, nmfplt_2_svd_4c_less_o3_lotbg, nmfplt_3_svd_4c_less_o3_lotbg, nmfplt_4_svd_4c_less_o3_lotbg, ncol=2)
 ```
+
 ## 5 Components
 ```{r}
 nmf_result_5c_less_o3_lotbg <- nmf(normalized_matrix_less_o3_lotbg, rank = 5, method = "KL", seed='nndsvd')
