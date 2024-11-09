@@ -591,11 +591,68 @@ nmfplt_5_svd_5c_less_o3 <- get_component_plot(H_long_5c_less_o3,
 grid.arrange(nmfplt_1_svd_5c_less_o3, nmfplt_2_svd_5c_less_o3, nmfplt_3_svd_5c_less_o3, nmfplt_4_svd_5c_less_o3, nmfplt_5_svd_5c_less_o3, ncol=2)
 ```
 
-### Compare to 4 components
+### Wind plots
+```{r}
+hourly_wind_nona <- hourly_nona %>%
+  select(wdr_deg, wsp_ms)
 
-```{r, eval=TRUE, echo = FALSE, fig.height=15, fig.width=16}
-grid.arrange(nmfplt_1_svd_4c_less_o3, nmfplt_2_svd_4c_less_o3, nmfplt_3_svd_4c_less_o3, nmfplt_4_svd_4c_less_o3, ncol=2)
+data_to_plot <- tibble(
+  component1 = basis(nmf_result_5c_less_o3)[,1],
+  component2 = basis(nmf_result_5c_less_o3)[,2],
+  component3 = basis(nmf_result_5c_less_o3)[,3],
+  component4 = basis(nmf_result_5c_less_o3)[,4],
+  component5 = basis(nmf_result_5c_less_o3)[,5],
+  wd = round(hourly_wind_nona$wdr_deg, -1)
+)
+# ) %>%
+#   pivot_longer(cols = c(1:5), names_to = 'component', values_to = 'component_wind')
+# data_to_plot %>%
+#   ggplot(aes(x = wd, y = component_wind, group = wd, fill = component)) +
+#   geom_boxplot() +
+#   facet_wrap(~component)
 ```
+
+```{r}
+boxplot(component1 ~ wd, data = data_to_plot,
+        outline = FALSE, col = "#ccd5ae",
+        main = "NMF factor expression vs Wind Direction (Component 1)",
+        xlab = "Wind direction (°)",
+        ylab = "Factor expression")
+```
+
+```{r}
+boxplot(component2 ~ wd, data = data_to_plot,
+        outline = FALSE, col = "#e9edc9",
+        main = "NMF factor expression vs Wind Direction (Component 2)",
+        xlab = "Wind direction (°)",
+        ylab = "Factor expression")
+```
+
+```{r}
+boxplot(component3 ~ wd, data = data_to_plot,
+        outline = FALSE, col = "#fefae0",
+        main = "NMF factor expression vs Wind Direction (Component 3)",
+        xlab = "Wind direction (°)",
+        ylab = "Factor expression")
+```
+
+```{r}
+boxplot(component4 ~ wd, data = data_to_plot,
+        outline = FALSE, col = "#faedcd",
+        main = "NMF factor expression vs Wind Direction (Component 4)",
+        xlab = "Wind direction (°)",
+        ylab = "Factor expression")
+```
+
+```{r}
+boxplot(component5 ~ wd, data = data_to_plot,
+        outline = FALSE, col = "#d4a373",
+        main = "NMF factor expression vs Wind Direction (Component 5)",
+        xlab = "Wind direction (°)",
+        ylab = "Factor expression")
+
+```
+
 
 # Remove Ozone + chemicals with more than 500+ background values
 ## 4 Components
