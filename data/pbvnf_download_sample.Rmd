@@ -1,0 +1,148 @@
+---
+title: "VNF download"
+author: "Jerry"
+date: "2024-09-04"
+output: html_document
+---
+```{r}
+library(httr)
+library(jsonlite)
+library(utils)
+library(tidyverse)
+library(lubridate)
+library(dagR)
+library(R.utils)
+library(data.table)
+library(leaflet)
+```
+
+# Downloading data loop
+```{r}
+# Retrieve access token
+params <- list(
+client_id = 'eogdata_oidc',
+client_secret = '2677ad81-521b-4869-8480-6d05b9e57d48',
+username = 'jerryp.wu@mail.utoronto.ca',
+password = 'kBREu_D63qZ34g4',
+grant_type = 'password'
+)
+
+token_url <- 'https://eogauth.mines.edu/auth/realms/master/protocol/openid-connect/token'
+response <- POST(token_url, body = params, encode = "form")
+access_token_list <- fromJSON(content(response,as="text",encoding="UTF-8"))
+access_token <- access_token_list$access_token
+auth <- paste('Bearer', access_token)
+
+# In case there's no previous data, start from scratch
+### You might want to change this for different versions, depending on what's available
+vnf <- data.table(
+    vnf_id = character(),
+    date = as.Date(character()),
+    lon = numeric(),
+    lat = numeric(),
+    temp_bb = integer(),
+    temp_bkg = integer(),
+    esf_bb = numeric(),
+    rhi = numeric(),
+    rh = numeric(),
+    area_pixel = numeric(),
+    area_bb = numeric(),
+    cloud_mask = integer(),
+    file_date = as.Date(character())
+  )
+
+# if there is previous data, load in to update
+# previous_data <- readRDS('pb_vnf/pb-vnf_220831-240301-v1.rds')
+# 
+# start_date = max(previous_data$file_date) + 1
+
+# Else, set start date
+start_date = as.Date('2023-04-14')
+
+# Set end date
+
+end_date = as.Date("2024-09-01")
+
+new_file_name <- 'pb-vnf_230414-240901.rds'
+
+# vector of dates
+if(start_date > end_date){
+  stop("Invalid dates for update.")
+} else{
+  vnf.dates = seq(start_date, end_date, "days")
+}
+
+vnfv30.url.pfx <- c(
+  "https://eogdata.mines.edu/wwwdata/viirs_products/vnf/v30//VNF_npp_d",
+  "_noaa_v30-ez.csv.gz")
+
+# Download & update loop --------------------------------------------------
+for(d in 1:length(vnf.dates)){
+  # prep ----
+  # starts timer to track download time
+  start_time = Sys.time()
+  
+  # V30 GRAVITE version
+  url.name = paste0(vnfv30.url.pfx[1], 
+                    gsub('-', '', vnf.dates[d]), vnfv30.url.pfx[2])
+  gz.name = paste0('pb_vnf/raw/', basename(url.name))
+  
+  # get CSV name for unzipped file
+  csv.name = gsub(".gz", "", gz.name)
+  
+  # download & process ----
+  # try to download the file, error handler in case of no data
+  tryCatch({
+    # message indicating date being downloaded
+    cat("[", as.character(vnf.dates[d]),'] download. ', sep='')
+    
+    # downloads the file ----
+    download.file(url.name, gz.name, 
+                  mode = 'wb', quiet = TRUE,
+                  headers = list(Authorization = auth))
+    # unzips GZ, keeps the CSV, removes the GZ
+    R.utils::gunzip(gz.name, overwrite = TRUE)
+    # process
+    cat('process. ', sep='')
+    
+    # process the file ----
+    vnf.temp = fread(csv.name) %>% 
+      rename_all(tolower) %>% # rename all columns to lowercase for convenience
+      select(all_of(vnf.cols)) %>% # collect relevant columns
+      mutate(across(where(is.numeric),  ~ na_if(.x, 999999))) %>% # replace 999999 as missing
+      filter(!is.na(temp_bb)) %>% # keep those not missing temperature
+      # generate unique VNF_ID and valid date-format date column
+      mutate(vnf_id = paste0('VNF', gsub('-','',vnf.dates[d]), sprintf('%06d', 1:nrow(.))),
+             date = as.Date(substr(date_mscan, 1, 10), format = "%Y/%m/%d"),
+             file_date = vnf.dates[d]) %>% 
+      # collect and rename certain columns, and drop a few
+      select(vnf_id, date, lon = lon_gmtco, lat = lat_gmtco,
+             everything(), -date_mscan) %>% 
+      # filter by lat & lon bounds (bbox)
+      ### You can change this to your needs. I did not include lon_lim, lat_lim here.
+      # filter(lon >= lon_lim[1], lon <= lon_lim[2],
+      #        lat >= lat_lim[1], lat <= lat_lim[2])
+    
+    # delete CSV file
+    file.remove(csv.name)
+    
+    # report time took t to download and process ----
+    cat(difftime(Sys.time(), start_time, units='secs') %>% ceiling(),
+        " secs.\r", sep='')
+  }, error = function(e){
+    print(e)
+  })
+  
+  # append to existing data
+  vnf = rbindlist(
+    list(vnf,
+         vnf.temp))
+  
+  # output every 50 days and at end. updating every day would be pretty slow
+  if(d %% 50 == 0 | d == length(vnf.dates)){
+    saveRDS(vnf, paste0("pb_vnf/", new_file_name))
+  }
+}
+
+# The above loop will give you a data frame 'vnf'
+```

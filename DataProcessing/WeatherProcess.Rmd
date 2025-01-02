@@ -25,6 +25,7 @@ for (i in 1:length(csv_names)){
   }
 }
 ```
+
 ## Cleaning
 ```{r}
 # Download from https://aqi.air.env.nm.gov/StationReportFast.aspx?ST_ID=35#

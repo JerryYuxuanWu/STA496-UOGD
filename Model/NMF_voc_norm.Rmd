@@ -18,7 +18,7 @@ library(readxl)
 1. Remove hourly observation with missing observation for any chemical
 2. Remove background noise level using min values (except for chemicals with minimum value < 2\*LOD and maximum value > 100\*LOD)
 3. Zero values are converted to a random value between 0 and 0.5\*LOD
-4. Normalize using 0th & 99th quantile
+4. Normalize using min and max
 5. Compute weight matrix according to Guha's paper, without LOQ
 
 ## Reading the data
@@ -31,6 +31,7 @@ hourly_data <- readRDS("../DataProcessing/Trailer_hourly_merge_20240905.rds")
 ```
 
 ```{r}
+# PROCEDURE STEP 1:
 # remove NAs
 hourly_nona <- hourly_data %>% select(-c(temp_bb,rhi, esf_bb, distToLovi,inv_dist, 
                                          distToLovi_wells, monthly_oil, monthly_gas)) %>% na.omit()
@@ -56,6 +57,7 @@ hourly_dates <- hourly_nona %>%
   mutate(yearmonth = substring(day, 0, 7)) %>%
   pull(yearmonth)
 ``` 
+
 ## Data visualisation
 ```{r fig.height=10}
 non_vocs <- c('ch4', 'co2', 'co', 'h2s', 'so2', 'nox', 'o3')
@@ -164,8 +166,12 @@ knitr::kable(info_table)
 ```
 
 ```{r}
+# PROCEDURE STEP 2:
 #adjustments that were made according to paper
 #William: I'm guessing this refers to Gunnar's paper section 2.2 and Guha 3.3
+
+# Check whether chemical has background noise level that needs to be removed
+# i.e, NO ADJUSTMENT if minimum value < 2*LOD and maximum value > 100*LOD
 adjusting_neg_bg_from_lod <- function(chemical, LOD, background, hourly_data){ 
     # get min and max
     min_value <- min(hourly_data[chemical], na.rm = TRUE)
@@ -214,11 +220,6 @@ adjusted_background_voc <- background_lod_voc %>%
 ```
 ```{r}
 # So now we have the adjusted background concentrations
-subtract_adj_bg <- function(column, chemical) {
-  print(chemical)
-  result <- 
-  return (result)
-}
 hourly_nona_bgrm <- hourly_full_nona %>%
   mutate(across(adjusted_background_non_voc$chemical, ~  .x - adjusted_background_non_voc$adjusted_background[adjusted_background_non_voc$chemical== cur_column()]))
 hourly_nona_bgrm <- hourly_nona_bgrm %>%
@@ -231,7 +232,8 @@ colSums(hourly_nona_bgrm == 0)
 ```
 
 ```{r}
-# replace negative values with random values between 0 and 0.5*LOD
+# PROCEDURE STEP 3
+# replace zero values with random values between 0 and 0.5*LOD
 set.seed(123)
 replace_zero_with_random <- function(column, name, LOD_df){
   LOD <- LOD_df$LOD[LOD_df$chemical == name]
@@ -311,7 +313,7 @@ for (i in 1:number_row) {
 }
 ```
 
-```{r}
+```{r, include = FALSE}
 # set a seed for nmf
 # set.seed(123)
 # #function below used to estimate the optimal rank and will be used in the nmf() function. 
@@ -331,7 +333,7 @@ plot(estimate_rank)
 ```
 
 
-```{r}
+```{r, include = FALSE}
 # fitting the optimal rank based on the above plots
 # the choice of the optimal rank needs to be discussed
 output <- nmf(normalized_matrix, rank = 4, weight = weight_matrix, method = "ls-nmf")
@@ -340,7 +342,7 @@ H <- coef(output)
 ```
 
 ### Source contributions
-```{r}
+```{r, include = FALSE}
 # Convert H to a data frame for ggplot
 H_df <- as.data.frame(H)
 # Add a column for component
@@ -402,7 +404,7 @@ get_component_plot <- function(data, component, title) {
 nmfplt_1_ls <- get_component_plot(H_long, 'V1', 'Component 1 ls-nmf Full')
 nmfplt_1_ls
 ```
-```{r}
+```{r, include = FALSE}
 nmfplt_2_ls <- get_component_plot(H_long, 'V2', 'Component 2 ls-nmf Full')
 nmfplt_2_ls
 nmfplt_3_ls <- get_component_plot(H_long, 'V3', 'Component 3 ls-nmf Full')
@@ -410,11 +412,11 @@ nmfplt_3_ls
 nmfplt_4_ls <- get_component_plot(H_long, 'V4', 'Component 4 ls-nmf Full')
 nmfplt_4_ls
 ```
-```{r, eval=TRUE, echo = FALSE, fig.height=15, fig.width=20}
+```{r, include = FALSE, fig.height=15, fig.width=20}
 grid.arrange(nmfplt_1_ls, nmfplt_2_ls, nmfplt_3_ls, nmfplt_4_ls, ncol=2)
 ```
 
-# NMF - Eva 
+# NMF - SVD seed
 ```{r}
 # Try Eva's approach
 components <- 4:10
@@ -448,12 +450,12 @@ ggplot(df, aes(x = components, y = errors)) +
 ```
 
 
-```{r, eval=TRUE, echo = F}
+```{r, include = FALSE}
 rankerror4 <-  df[1,2]
 rankerror4
 ```
 
-```{r, eval=TRUE, echo = F}
+```{r, include = FALSE}
 # Apply NMF
 nmf_result <- nmf(normalized_matrix, rank = 4, method = "KL", seed='nndsvd')
 
@@ -473,7 +475,7 @@ image(coef_matrix, main = "Coefficient Matrix (H)")
 ```
 
 
-```{r, eval=TRUE, echo = T, include=FALSE}
+```{r, include=FALSE}
 # Convert H to a data frame for ggplot
 H_df <- as.data.frame(coef_matrix)
 # Add a column for chemicals
@@ -487,38 +489,38 @@ nmfplt_1_svd <- get_component_plot(H_long, '1', 'Component 1 nndsvd Full')
 nmfplt_1_svd
 ```
 
-```{r, eval=TRUE, echo = T, include=FALSE}
+```{r, include=FALSE}
 nmfplt_2_svd <- get_component_plot(H_long, '2', 'Component 2 nndsvd Full')
 nmfplt_3_svd <- get_component_plot(H_long, '3', 'Component 3 nndsvd Full')
 nmfplt_4_svd <- get_component_plot(H_long, '4', 'Component 4 nndsvd Full')
 ```
 
-```{r, eval=TRUE, echo = FALSE, fig.height=15, fig.width=16}
+```{r, include = FALSE, fig.height=15, fig.width=16}
 grid.arrange(nmfplt_1_svd, nmfplt_2_svd, nmfplt_3_svd, nmfplt_4_svd, ncol=2)
 ```
 \newpage
 
 # Method comparisons
-```{r, fig.height=8, fig.width=16}
+```{r, include = FALSE, fig.height=8, fig.width=16}
 grid.arrange(nmfplt_1_ls, nmfplt_3_svd, ncol = 2)
 ```
 
-```{r, fig.height=8, fig.width=16}
+```{r, include = FALSE, fig.height=8, fig.width=16}
 grid.arrange(nmfplt_2_ls, nmfplt_2_svd, ncol = 2)
 ```
 
-```{r, fig.height=8, fig.width=16}
+```{r, include = FALSE, fig.height=8, fig.width=16}
 grid.arrange(nmfplt_3_ls, nmfplt_1_svd, ncol = 2)
 ```
 
-```{r, fig.height=8, fig.width=16}
+```{r, include = FALSE, fig.height=8, fig.width=16}
 grid.arrange(nmfplt_4_ls, nmfplt_4_svd, ncol = 2)
 ```
 
 # Remove Ozone
 
 ## 4 Components
-```{r}
+```{r, include = FALSE}
 normalized_matrix_less_o3 <- normalized_matrix[ ,setdiff(colnames(normalized_matrix), "o3")]
 
 nmf_result_4c_less_o3 <- nmf(normalized_matrix_less_o3, rank = 4, method = "KL", seed='nndsvd')
@@ -550,7 +552,7 @@ nmfplt_4_svd_4c_less_o3 <- get_component_plot(H_long_4c_less_o3,
                                            '4', 'Component 4 nndsvd Less ozone, 4C')
 ```
 
-```{r, eval=TRUE, echo = FALSE, fig.height=15, fig.width=16}
+```{r, include = FALSE, eval=TRUE, echo = FALSE, fig.height=15, fig.width=16}
 grid.arrange(nmfplt_1_svd_4c_less_o3, nmfplt_2_svd_4c_less_o3, nmfplt_3_svd_4c_less_o3, nmfplt_4_svd_4c_less_o3, ncol=2)
 ```
 
@@ -565,7 +567,7 @@ par(mfrow = c(1, 2))
 image(basis_matrix_5c_less_o3, main = "Basis Matrix (W)")
 image(coef_matrix_5c_less_o3, main = "Coefficient Matrix (H)")
 ```
-```{r, eval=TRUE, echo = T, include=FALSE}
+```{r, eval=TRUE, echo = T}
 # Convert H to a data frame for ggplot
 H_df_5c_less_o3 <- as.data.frame(coef_matrix_5c_less_o3)
 # Add a column for chemicals
@@ -612,7 +614,7 @@ data_to_plot <- tibble(
 #   facet_wrap(~component)
 ```
 
-```{r}
+```{r, eval=TRUE, echo = FALSE}
 boxplot(component1 ~ wd, data = data_to_plot,
         outline = FALSE, col = "#ccd5ae",
         main = "NMF factor expression vs Wind Direction (Component 1)",
@@ -620,7 +622,7 @@ boxplot(component1 ~ wd, data = data_to_plot,
         ylab = "Factor expression")
 ```
 
-```{r}
+```{r, eval=TRUE, echo = FALSE}
 boxplot(component2 ~ wd, data = data_to_plot,
         outline = FALSE, col = "#e9edc9",
         main = "NMF factor expression vs Wind Direction (Component 2)",
@@ -628,7 +630,7 @@ boxplot(component2 ~ wd, data = data_to_plot,
         ylab = "Factor expression")
 ```
 
-```{r}
+```{r, eval=TRUE, echo = FALSE}
 boxplot(component3 ~ wd, data = data_to_plot,
         outline = FALSE, col = "#fefae0",
         main = "NMF factor expression vs Wind Direction (Component 3)",
@@ -636,7 +638,7 @@ boxplot(component3 ~ wd, data = data_to_plot,
         ylab = "Factor expression")
 ```
 
-```{r}
+```{r, eval=TRUE, echo = FALSE}
 boxplot(component4 ~ wd, data = data_to_plot,
         outline = FALSE, col = "#faedcd",
         main = "NMF factor expression vs Wind Direction (Component 4)",
@@ -644,7 +646,7 @@ boxplot(component4 ~ wd, data = data_to_plot,
         ylab = "Factor expression")
 ```
 
-```{r}
+```{r, eval=TRUE, echo = FALSE}
 boxplot(component5 ~ wd, data = data_to_plot,
         outline = FALSE, col = "#d4a373",
         main = "NMF factor expression vs Wind Direction (Component 5)",
@@ -653,10 +655,112 @@ boxplot(component5 ~ wd, data = data_to_plot,
 
 ```
 
+## 6 Components
+```{r, include = FALSE}
+nmf_result_6c_less_o3 <- nmf(normalized_matrix_less_o3, rank = 6, method = "KL", seed='nndsvd')
+
+basis_matrix_6c_less_o3 <- basis(nmf_result_6c_less_o3)
+coef_matrix_6c_less_o3 <- coef(nmf_result_6c_less_o3)
+
+par(mfrow = c(1, 2))
+image(basis_matrix_6c_less_o3, main = "Basis Matrix (W)")
+image(coef_matrix_6c_less_o3, main = "Coefficient Matrix (H)")
+```
+
+```{r, eval=TRUE, echo = T, include=FALSE}
+# Convert H to a data frame for ggplot
+H_df_6c_less_o3 <- as.data.frame(coef_matrix_6c_less_o3)
+# Add a column for chemicals
+H_df_6c_less_o3$Component <- rownames(H_df_6c_less_o3)
+
+# Reshape data to long format
+H_long_6c_less_o3 <- pivot_longer(H_df_6c_less_o3, cols = -Component, names_to = "Chemical", values_to = "Contribution")
+
+# Plot
+nmfplt_1_svd_6c_less_o3 <- get_component_plot(H_long_6c_less_o3, 
+                                           '1', 'Component 1 nndsvd Less ozone, 6c')
+nmfplt_2_svd_6c_less_o3 <- get_component_plot(H_long_6c_less_o3, 
+                                           '2', 'Component 2 nndsvd Less ozone, 6c')
+nmfplt_3_svd_6c_less_o3 <- get_component_plot(H_long_6c_less_o3, 
+                                           '3', 'Component 3 nndsvd Less ozone, 6c')
+nmfplt_4_svd_6c_less_o3 <- get_component_plot(H_long_6c_less_o3, 
+                                           '4', 'Component 4 nndsvd Less ozone, 6c')
+nmfplt_5_svd_6c_less_o3 <- get_component_plot(H_long_6c_less_o3, 
+                                           '5', 'Component 5 nndsvd Less ozone, 6c')
+nmfplt_6_svd_6c_less_o3 <- get_component_plot(H_long_6c_less_o3, 
+                                           '6', 'Component 6 nndsvd Less ozone, 6c')
+```
+
+```{r, eval=TRUE, echo = FALSE, include = FALSE, fig.height=15, fig.width=16}
+grid.arrange(nmfplt_1_svd_6c_less_o3, nmfplt_2_svd_6c_less_o3, nmfplt_3_svd_6c_less_o3, nmfplt_4_svd_6c_less_o3, nmfplt_5_svd_6c_less_o3, nmfplt_6_svd_6c_less_o3, ncol=2)
+```
+
+### Wind plots
+```{r, include = FALSE}
+data_to_plot <- tibble(
+  component1 = basis(nmf_result_6c_less_o3)[,1],
+  component2 = basis(nmf_result_6c_less_o3)[,2],
+  component3 = basis(nmf_result_6c_less_o3)[,3],
+  component4 = basis(nmf_result_6c_less_o3)[,4],
+  component5 = basis(nmf_result_6c_less_o3)[,5],
+  component6 = basis(nmf_result_6c_less_o3)[,6],
+  wd = round(hourly_wind_nona$wdr_deg, -1)
+)
+```
+
+```{r, include = FALSE}
+boxplot(component1 ~ wd, data = data_to_plot,
+        outline = FALSE, col = "#ccd5ae",
+        main = "NMF factor expression vs Wind Direction (Component 1)",
+        xlab = "Wind direction (°)",
+        ylab = "Factor expression")
+```
+
+```{r, include = FALSE}
+boxplot(component2 ~ wd, data = data_to_plot,
+        outline = FALSE, col = "#e9edc9",
+        main = "NMF factor expression vs Wind Direction (Component 2)",
+        xlab = "Wind direction (°)",
+        ylab = "Factor expression")
+```
+
+```{r, include = FALSE}
+boxplot(component3 ~ wd, data = data_to_plot,
+        outline = FALSE, col = "#fefae0",
+        main = "NMF factor expression vs Wind Direction (Component 3)",
+        xlab = "Wind direction (°)",
+        ylab = "Factor expression")
+```
+
+```{r, include = FALSE}
+boxplot(component4 ~ wd, data = data_to_plot,
+        outline = FALSE, col = "#faedcd",
+        main = "NMF factor expression vs Wind Direction (Component 4)",
+        xlab = "Wind direction (°)",
+        ylab = "Factor expression")
+```
+
+```{r, include = FALSE}
+boxplot(component5 ~ wd, data = data_to_plot,
+        outline = FALSE, col = "#d4a373",
+        main = "NMF factor expression vs Wind Direction (Component 5)",
+        xlab = "Wind direction (°)",
+        ylab = "Factor expression")
+
+```
+
+```{r, include = FALSE}
+boxplot(component6 ~ wd, data = data_to_plot,
+        outline = FALSE, col = "#f0a373",
+        main = "NMF factor expression vs Wind Direction (Component 6)",
+        xlab = "Wind direction (°)",
+        ylab = "Factor expression")
+
+```
 
 # Remove Ozone + chemicals with more than 500+ background values
 ## 4 Components
-```{r}
+```{r, include = FALSE}
 normalized_matrix_less_o3_lotbg <- normalized_matrix[ ,setdiff(colnames(normalized_matrix), c('o3', 'h2s', 'so2', '1_3-butadiene', 'isoprene', 'ethyl-benzene', 'm&p-xylene', 'o-xylene'))]
 
 nmf_result_4c_less_o3_lotbg <- nmf(normalized_matrix_less_o3_lotbg, rank = 4, method = "KL", seed='nndsvd')
@@ -668,6 +772,7 @@ par(mfrow = c(1, 2))
 image(basis_matrix_4c_less_o3_lotbg, main = "Basis Matrix (W)")
 image(coef_matrix_4c_less_o3_lotbg, main = "Coefficient Matrix (H)")
 ```
+
 ```{r, eval=TRUE, echo = T, include=FALSE}
 # Convert H to a data frame for ggplot
 H_df_4c_less_o3_lotbg <- as.data.frame(coef_matrix_4c_less_o3_lotbg)
@@ -688,12 +793,12 @@ nmfplt_4_svd_4c_less_o3_lotbg <- get_component_plot(H_long_4c_less_o3_lotbg,
                                            '4', 'Component 4 nndsvd Less ozone, lot bg, 4C')
 ```
 
-```{r, eval=TRUE, echo = FALSE, fig.height=15, fig.width=16}
+```{r, eval=TRUE, echo = FALSE, include = FALSE, fig.height=15, fig.width=16}
 grid.arrange(nmfplt_1_svd_4c_less_o3_lotbg, nmfplt_2_svd_4c_less_o3_lotbg, nmfplt_3_svd_4c_less_o3_lotbg, nmfplt_4_svd_4c_less_o3_lotbg, ncol=2)
 ```
 
 ## 5 Components
-```{r}
+```{r, include = FALSE}
 nmf_result_5c_less_o3_lotbg <- nmf(normalized_matrix_less_o3_lotbg, rank = 5, method = "KL", seed='nndsvd')
 
 basis_matrix_5c_less_o3_lotbg <- basis(nmf_result_5c_less_o3_lotbg)
@@ -725,11 +830,11 @@ nmfplt_5_svd_5c_less_o3_lotbg <- get_component_plot(H_long_5c_less_o3_lotbg,
                                            '5', 'Component 5 nndsvd Less ozone, lot bg, 5c')
 ```
 
-```{r, eval=TRUE, echo = FALSE, fig.height=15, fig.width=16}
+```{r, eval=TRUE, echo = FALSE, include = FALSE, fig.height=15, fig.width=16}
 grid.arrange(nmfplt_1_svd_5c_less_o3_lotbg, nmfplt_2_svd_5c_less_o3_lotbg, nmfplt_3_svd_5c_less_o3_lotbg, nmfplt_4_svd_5c_less_o3_lotbg, nmfplt_5_svd_5c_less_o3_lotbg, ncol=2)
 ```
 Compare to 4 components
 
-```{r, eval=TRUE, echo = FALSE, fig.height=15, fig.width=16}
+```{r, eval=TRUE, echo = FALSE, include = FALSE, fig.height=15, fig.width=16}
 grid.arrange(nmfplt_1_svd_4c_less_o3_lotbg, nmfplt_2_svd_4c_less_o3_lotbg, nmfplt_3_svd_4c_less_o3_lotbg, nmfplt_4_svd_4c_less_o3_lotbg, ncol=2)
 ```
