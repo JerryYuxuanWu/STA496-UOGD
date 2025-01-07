@@ -53,7 +53,11 @@ flaring_daily <- flaring %>%
             weighted.count = sum(inv_dist) * 100,
             rhi = mean(rhi),
             esf_bb = mean(esf_bb),
-            flare_count = n()) %>% 
+            n_flare_100 = n(),
+            n_flare_30 = sum(distToLovi <= 30),
+            n_flare_20 = sum(distToLovi <= 20),
+            n_flare_10 = sum(distToLovi <= 10),
+            n_flare_5 = sum(distToLovi <= 5)) %>% 
   rename(date = `substr(date, 1, 10)`)
 ```
 
@@ -114,8 +118,8 @@ Trailer_daily_merge <- Trailer_daily_merge %>% mutate(day = as.Date(day))
 # Further cleaning
 ```{r}
 # making NA flare_count to 0
-Trailer_daily_merge$flare_count[is.na(Trailer_daily_merge$flare_count)] <- 0
-Trailer_hourly_merge$flare_count[is.na(Trailer_hourly_merge$flare_count)] <- 0
+Trailer_daily_merge$n_flare_100[is.na(Trailer_daily_merge$n_flare_100)] <- 0
+Trailer_hourly_merge$n_flare_100[is.na(Trailer_hourly_merge$n_flare_100)] <- 0
 Trailer_daily_merge$weighted.count[is.na(Trailer_daily_merge$weighted.count)] <- 0
 Trailer_hourly_merge$weighted.count[is.na(Trailer_hourly_merge$weighted.count)] <- 0
 # none flare within 100km

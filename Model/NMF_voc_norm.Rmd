@@ -32,9 +32,7 @@ hourly_data <- readRDS("../DataProcessing/Trailer_hourly_merge_20240905.rds")
 
 ```{r}
 # PROCEDURE STEP 1:
-# remove NAs
-hourly_nona <- hourly_data %>% select(-c(temp_bb,rhi, esf_bb, distToLovi,inv_dist, 
-                                         distToLovi_wells, monthly_oil, monthly_gas)) %>% na.omit()
+hourly_data <- hourly_data %>% rename('co2' = 'co2_ppm')
 
 vocs <- c("ethane", "ethene", "propane", "propene",
                                         "1_3-butadiene", "i-butane", "n-butane",
@@ -42,13 +40,21 @@ vocs <- c("ethane", "ethene", "propane", "propene",
                                         "n-pentane", "n-hexane", "isoprene", "n-heptane",
                                         "benzene", "n-octane", "toluene", "ethyl-benzene", 
                                         "m&p-xylene", "o-xylene")
+
+
+non_vocs <- c('ch4', 'co2', 'co', 'h2s', 'so2', 'nox', 'o3')
+
+# remove row with missing obs for any chemical
+hourly_nona <- hourly_data %>% 
+  select(c('day', 'time_utc', vocs, non_vocs, 'wdr_deg', 'wsp_ms')) %>% 
+  na.omit()
+
 # retrieving the vocs, removing everything else except the vocs
 hourly_vocs <- hourly_nona %>% select(any_of(vocs))
 
 # retrieving the non-vocs: co2_ppm, nox, ch4, h2s, so2, o3
 # double check this
-non_vocs <- c('ch4', 'co2_ppm', 'co', 'h2s', 'so2', 'nox', 'o3')
-hourly_non_vocs <- hourly_nona %>% select(all_of(non_vocs)) %>% rename('co2' = 'co2_ppm')
+hourly_non_vocs <- hourly_nona %>% select(all_of(non_vocs)) 
 
 hourly_full_nona <- cbind(hourly_non_vocs, hourly_vocs)
 
@@ -327,6 +333,7 @@ measures <- estimate_rank$measures
 fit <- estimate_rank$fit
 consensus <- estimate_rank$consensus
 ```
+
 ```{r}
 # plots the NMF rank survey
 plot(estimate_rank)
@@ -382,13 +389,16 @@ desired_order <- c(
   "ch4"
 )
 
+color_pal <- c("#ccd5ae", "#e9edc9", "#fefae0", "#faedcd", "#d4a373", "#df7d5a")
+
 get_component_plot <- function(data, component, title) {
+  col <- color_pal[as.numeric(component)]
   component_data <- subset(data, Component == component)
   component_data <- component_data %>%
     mutate(Chemical = factor(Chemical, levels = desired_order))
   
   plot <- ggplot(component_data, aes(x = Chemical, y = Contribution)) +
-            geom_bar(stat = "identity", position = "dodge", fill = "orange") +
+            geom_bar(stat = "identity", position = "dodge", fill = col) +
             theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
             geom_text(aes(label = sprintf("%.2f", round(Contribution, 2))), color = "blue", size = 3, nudge_y = 0.1) +
             labs(x = "Chemical", y = "Contribution", title = title)+
@@ -404,6 +414,7 @@ get_component_plot <- function(data, component, title) {
 nmfplt_1_ls <- get_component_plot(H_long, 'V1', 'Component 1 ls-nmf Full')
 nmfplt_1_ls
 ```
+
 ```{r, include = FALSE}
 nmfplt_2_ls <- get_component_plot(H_long, 'V2', 'Component 2 ls-nmf Full')
 nmfplt_2_ls
@@ -412,6 +423,7 @@ nmfplt_3_ls
 nmfplt_4_ls <- get_component_plot(H_long, 'V4', 'Component 4 ls-nmf Full')
 nmfplt_4_ls
 ```
+
 ```{r, include = FALSE, fig.height=15, fig.width=20}
 grid.arrange(nmfplt_1_ls, nmfplt_2_ls, nmfplt_3_ls, nmfplt_4_ls, ncol=2)
 ```
@@ -520,8 +532,10 @@ grid.arrange(nmfplt_4_ls, nmfplt_4_svd, ncol = 2)
 # Remove Ozone
 
 ## 4 Components
-```{r, include = FALSE}
+```{r}
 normalized_matrix_less_o3 <- normalized_matrix[ ,setdiff(colnames(normalized_matrix), "o3")]
+# Store this for other use
+write_csv(as_tibble(normalized_matrix_less_o3), 'normalized_matrix_less_o3.csv')
 
 nmf_result_4c_less_o3 <- nmf(normalized_matrix_less_o3, rank = 4, method = "KL", seed='nndsvd')
 
@@ -532,7 +546,8 @@ par(mfrow = c(1, 2))
 image(basis_matrix_4c_less_o3, main = "Basis Matrix (W)")
 image(coef_matrix_4c_less_o3, main = "Coefficient Matrix (H)")
 ```
-```{r, eval=TRUE, echo = T, include=FALSE}
+
+```{r, eval=TRUE, echo = T}
 # Convert H to a data frame for ggplot
 H_df_4c_less_o3 <- as.data.frame(coef_matrix_4c_less_o3)
 # Add a column for chemicals
@@ -552,12 +567,12 @@ nmfplt_4_svd_4c_less_o3 <- get_component_plot(H_long_4c_less_o3,
                                            '4', 'Component 4 nndsvd Less ozone, 4C')
 ```
 
-```{r, include = FALSE, eval=TRUE, echo = FALSE, fig.height=15, fig.width=16}
+```{r, eval=TRUE, echo = FALSE, fig.height=15, fig.width=16}
 grid.arrange(nmfplt_1_svd_4c_less_o3, nmfplt_2_svd_4c_less_o3, nmfplt_3_svd_4c_less_o3, nmfplt_4_svd_4c_less_o3, ncol=2)
 ```
 
 ## 5 Components
-```{r}
+```{r, message = FALSE}
 nmf_result_5c_less_o3 <- nmf(normalized_matrix_less_o3, rank = 5, method = "KL", seed='nndsvd')
 
 basis_matrix_5c_less_o3 <- basis(nmf_result_5c_less_o3)
@@ -567,6 +582,7 @@ par(mfrow = c(1, 2))
 image(basis_matrix_5c_less_o3, main = "Basis Matrix (W)")
 image(coef_matrix_5c_less_o3, main = "Coefficient Matrix (H)")
 ```
+
 ```{r, eval=TRUE, echo = T}
 # Convert H to a data frame for ggplot
 H_df_5c_less_o3 <- as.data.frame(coef_matrix_5c_less_o3)
@@ -578,15 +594,15 @@ H_long_5c_less_o3 <- pivot_longer(H_df_5c_less_o3, cols = -Component, names_to =
 
 # Plot
 nmfplt_1_svd_5c_less_o3 <- get_component_plot(H_long_5c_less_o3, 
-                                           '1', 'Component 1 nndsvd Less ozone, 5c')
+                                           '1', '1) Traffic emissions factor')
 nmfplt_2_svd_5c_less_o3 <- get_component_plot(H_long_5c_less_o3, 
-                                           '2', 'Component 2 nndsvd Less ozone, 5c')
+                                           '2', '2) Component 2 nndsvd Less ozone, 5c')
 nmfplt_3_svd_5c_less_o3 <- get_component_plot(H_long_5c_less_o3, 
-                                           '3', 'Component 3 nndsvd Less ozone, 5c')
+                                           '3', '3) Oil & Gas emssions factor')
 nmfplt_4_svd_5c_less_o3 <- get_component_plot(H_long_5c_less_o3, 
-                                           '4', 'Component 4 nndsvd Less ozone, 5c')
+                                           '4', '4) Flaring factor II (other directions)')
 nmfplt_5_svd_5c_less_o3 <- get_component_plot(H_long_5c_less_o3, 
-                                           '5', 'Component 5 nndsvd Less ozone, 5c')
+                                           '5', '5) Flaring Factor I (SW pad\'s flare)')
 ```
 
 ```{r, eval=TRUE, echo = FALSE, fig.height=15, fig.width=16}
@@ -606,17 +622,12 @@ data_to_plot <- tibble(
   component5 = basis(nmf_result_5c_less_o3)[,5],
   wd = round(hourly_wind_nona$wdr_deg, -1)
 )
-# ) %>%
-#   pivot_longer(cols = c(1:5), names_to = 'component', values_to = 'component_wind')
-# data_to_plot %>%
-#   ggplot(aes(x = wd, y = component_wind, group = wd, fill = component)) +
-#   geom_boxplot() +
-#   facet_wrap(~component)
+
 ```
 
 ```{r, eval=TRUE, echo = FALSE}
 boxplot(component1 ~ wd, data = data_to_plot,
-        outline = FALSE, col = "#ccd5ae",
+        outline = FALSE, col = color_pal[1],
         main = "NMF factor expression vs Wind Direction (Component 1)",
         xlab = "Wind direction (°)",
         ylab = "Factor expression")
@@ -624,7 +635,7 @@ boxplot(component1 ~ wd, data = data_to_plot,
 
 ```{r, eval=TRUE, echo = FALSE}
 boxplot(component2 ~ wd, data = data_to_plot,
-        outline = FALSE, col = "#e9edc9",
+        outline = FALSE, col = color_pal[2],
         main = "NMF factor expression vs Wind Direction (Component 2)",
         xlab = "Wind direction (°)",
         ylab = "Factor expression")
@@ -632,7 +643,7 @@ boxplot(component2 ~ wd, data = data_to_plot,
 
 ```{r, eval=TRUE, echo = FALSE}
 boxplot(component3 ~ wd, data = data_to_plot,
-        outline = FALSE, col = "#fefae0",
+        outline = FALSE, col = color_pal[3],
         main = "NMF factor expression vs Wind Direction (Component 3)",
         xlab = "Wind direction (°)",
         ylab = "Factor expression")
@@ -640,7 +651,7 @@ boxplot(component3 ~ wd, data = data_to_plot,
 
 ```{r, eval=TRUE, echo = FALSE}
 boxplot(component4 ~ wd, data = data_to_plot,
-        outline = FALSE, col = "#faedcd",
+        outline = FALSE, col = color_pal[4],
         main = "NMF factor expression vs Wind Direction (Component 4)",
         xlab = "Wind direction (°)",
         ylab = "Factor expression")
@@ -648,12 +659,69 @@ boxplot(component4 ~ wd, data = data_to_plot,
 
 ```{r, eval=TRUE, echo = FALSE}
 boxplot(component5 ~ wd, data = data_to_plot,
-        outline = FALSE, col = "#d4a373",
+        outline = FALSE, col = color_pal[5],
         main = "NMF factor expression vs Wind Direction (Component 5)",
         xlab = "Wind direction (°)",
         ylab = "Factor expression")
 
 ```
+## Factor analysis
+```{r}
+# First look at how well this approximates
+fitted_5c_less_o3 <- fitted(nmf_result_5c_less_o3)
+sum(abs(normalized_matrix_less_o3-fitted_5c_less_o3))
+```
+```{r, eval=TRUE, echo = T}
+# NMF factorizes V = WH
+# Store Basis matrix (W) and Coef Matrix (H)
+saveRDS(basis_matrix_5c_less_o3, 'result_rfiles/nmf_norm_5c_less_o3_basis.rds')
+saveRDS(coef_matrix_5c_less_o3, 'result_rfiles/nmf_norm_5c_less_o3_coef.rds')
+
+# Merge basis matrix into hourly observations
+basis_matrix_5c_less_o3 <- as_tibble(basis_matrix_5c_less_o3) %>%
+  setNames(c('Factor1', 'Factor2', 'Factor3', 'Factor4', 'Factor5'))
+
+normalized_hourly_data_5c_less_o3 <- hourly_nona[,c('day', 'time_utc')] %>%
+  cbind(normalized_matrix_less_o3) %>%
+  cbind(basis_matrix_5c_less_o3) %>%
+  right_join(hourly_data %>% select(-'day'), join_by(time_utc), suffix = c('_norm', ''))
+
+# saveRDS(normalized_full_data_5c_less_o3, 'result_rfiles/normalized_hourly_data_5c_less_o3.rds')
+```
+
+```{r}
+# Also compute a daily dataset
+normalized_daily_data_5c_less_o3 <- normalized_hourly_data_5c_less_o3 %>%
+  group_by(day) %>%
+  summarise(across(where(is.numeric), ~ mean(.x, na.rm = T)))
+
+# saveRDS(normalized_daily_data_5c_less_o3, 'result_rfiles/normalized_daily_data_5c_less_o3.rds')
+```
+
+
+```{r}
+# Check if relationship between # flares and flare factor (4 & 5)
+
+# Linear model
+flare_factor <- lm(n_flare_100 ~ Factor4 + Factor5, data = normalized_daily_data_5c_less_o3)
+summary(flare_factor)
+
+flare_factor_weighted <- lm(weighted.count ~ Factor4 + Factor5, data = normalized_daily_data_5c_less_o3)
+summary(flare_factor_weighted)
+
+# Poisson model
+flare_factor_pois <- glm(n_flare_100 ~ Factor4 + Factor5, family = 'poisson', data = normalized_daily_data_5c_less_o3)
+summary(flare_factor_pois)
+```
+
+```{r}
+# Check relationship between avg flare distance and flare factor (4 & 5)
+# Linear model
+flare_factor_dist <- lm(distToLovi ~ Factor4 + Factor5, data = normalized_daily_data_5c_less_o3)
+summary(flare_factor_dist)
+```
+
+
 
 ## 6 Components
 ```{r, include = FALSE}
@@ -808,6 +876,7 @@ par(mfrow = c(1, 2))
 image(basis_matrix_5c_less_o3_lotbg, main = "Basis Matrix (W)")
 image(coef_matrix_5c_less_o3_lotbg, main = "Coefficient Matrix (H)")
 ```
+
 ```{r, eval=TRUE, echo = T, include=FALSE}
 # Convert H to a data frame for ggplot
 H_df_5c_less_o3_lotbg <- as.data.frame(coef_matrix_5c_less_o3_lotbg)

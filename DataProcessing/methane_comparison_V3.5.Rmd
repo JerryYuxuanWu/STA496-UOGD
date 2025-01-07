@@ -1,0 +1,57 @@
+---
+title: "Methane_comp"
+author: "Jerry Wu"
+date: "2025-01-07"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(geosphere)
+```
+
+```{r}
+# Load in trailer Methane
+Trailer <- readRDS('TrailerProcessed-20240601.rds')
+
+trailer_ch4 <- Trailer %>% select(time_utc, ch4) %>%
+  mutate(day = as.Date(format(as.POSIXct(time_utc), '%Y-%m-%d')))
+```
+
+```{r}
+# Load in VNF data
+vnf <- readRDS('pb-vnf_20230501-20240601.rds')
+
+vnf <- vnf %>% 
+  mutate(across(where(is.numeric),  ~ na_if(.x, 999999))) %>% # replace 999999 as missing
+  filter(!(is.na(temp_bb) | is.na(methane_eq))) # keep those not missing temperature
+
+vnf <- vnf %>%
+  filter(temp_bb >= 1600)
+
+loving_lonlat <- c(-104.1089, 32.2961)
+distance_km_lov <- function(long, lati){
+  start <- c(long, lati)
+  distGeo(start, loving_lonlat) / 1000
+}
+
+vnf <- vnf %>% 
+  mutate(distToLovi = mapply(distance_km_lov, lon, lat))
+
+vnf_10km <- vnf %>%
+  filter(distToLovi <= 10)
+
+merged_ch4 <- vnf_10km %>%
+  select(date, methane_eq) %>%
+  left_join(trailer_ch4 %>% select(day, ch4), join_by(date == day)) %>%
+  rename('ch4_vnf_10km' =  'methane_eq', 
+         'ch4_trailer' = 'ch4')
+```
+```{r}
+merged_ch4
+```
+
+
