@@ -317,6 +317,8 @@ for (i in 1:number_row) {
     }
   }
 }
+
+# write_csv(as_tibble(weight_matrix) %>% setNames(colnames(normalized_matrix)) %>% select(-o3) %>% mutate(time_utc = hourly_nona$time_utc), 'weight_matrix.csv')
 ```
 
 ```{r, include = FALSE}
@@ -535,7 +537,7 @@ grid.arrange(nmfplt_4_ls, nmfplt_4_svd, ncol = 2)
 ```{r}
 normalized_matrix_less_o3 <- normalized_matrix[ ,setdiff(colnames(normalized_matrix), "o3")]
 # Store this for other use
-write_csv(as_tibble(normalized_matrix_less_o3), 'normalized_matrix_less_o3.csv')
+# write_csv(as_tibble(normalized_matrix_less_o3) %>% mutate(time_utc = hourly_nona$time_utc), 'normalized_matrix_less_o3.csv')
 
 nmf_result_4c_less_o3 <- nmf(normalized_matrix_less_o3, rank = 4, method = "KL", seed='nndsvd')
 
