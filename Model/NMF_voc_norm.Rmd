@@ -1,7 +1,7 @@
 ---
 title: "NMF"
 author: "William Zhang, Eva, Jerry"
-date: "2024-09-01"
+date: "2025-01-09"
 output:
   pdf_document: default
   html_document: default
@@ -609,6 +609,25 @@ nmfplt_5_svd_5c_less_o3 <- get_component_plot(H_long_5c_less_o3,
 
 ```{r, eval=TRUE, echo = FALSE, fig.height=15, fig.width=16}
 grid.arrange(nmfplt_1_svd_5c_less_o3, nmfplt_2_svd_5c_less_o3, nmfplt_3_svd_5c_less_o3, nmfplt_4_svd_5c_less_o3, nmfplt_5_svd_5c_less_o3, ncol=2)
+```
+
+### Fingerprint plot
+```{r}
+contrib_prop <- apply(H_df_5c_less_o3[,1:(length(H_df_5c_less_o3)-1)], MARGIN = 2, FUN = function(x) {x/sum(x)})
+contrib_prop %>% 
+  as_tibble() %>%
+  mutate(Component = c('Traffic', 'Component 2', 'Oil & Gas', 'Flare 1', 'Flare 2')) %>%
+  pivot_longer(cols = -Component, names_to = "Chemical", values_to = "Contribution_prop") %>%
+  mutate(Chemical = factor(Chemical, levels = desired_order)) %>%
+  ggplot(aes(fill=Component, y=Contribution_prop, x=Chemical)) + 
+  geom_bar(position="fill", stat="identity") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "Chemical", y = "Contribution Proportion", 
+       title = 'Contribution proportion of each component') +
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank())
+
 ```
 
 ### Wind plots

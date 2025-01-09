@@ -41,17 +41,44 @@ distance_km_lov <- function(long, lati){
 vnf <- vnf %>% 
   mutate(distToLovi = mapply(distance_km_lov, lon, lat))
 
-vnf_10km <- vnf %>%
-  filter(distToLovi <= 10)
+radius <- c(5, 10, 20, 50, 100)
 
-merged_ch4 <- vnf_10km %>%
-  select(date, methane_eq) %>%
-  left_join(trailer_ch4 %>% select(day, ch4), join_by(date == day)) %>%
-  rename('ch4_vnf_10km' =  'methane_eq', 
-         'ch4_trailer' = 'ch4')
+methane_corr <- tibble(radius = radius, 
+                       n = rep(0, length(radius)), 
+                       correlation = rep(0, length(radius)))
+
+for (r in radius) {
+  temp <- vnf %>%
+    filter(distToLovi <= r)
+  
+  merged_ch4 <- temp %>%
+    select(date, methane_eq) %>%
+    group_by(date) %>%
+    summarise(avg_methane_eq = mean(methane_eq)) %>%
+    left_join(trailer_ch4 %>% 
+                select(day, ch4) %>% 
+                group_by(day) %>% 
+                summarise(avg_ch4 = mean(ch4, na.rm=T)), 
+              join_by(date == day)) %>%
+  rename('ch4_vnf' =  'avg_methane_eq', 
+         'ch4_trailer' = 'avg_ch4')
+  
+  methane_corr <- methane_corr %>%
+    rows_update(tibble(radius = r, 
+                       n = nrow(merged_ch4),
+                       correlation = cor(merged_ch4$ch4_vnf,
+                                         merged_ch4$ch4_trailer)), by = 'radius')
+}
+
+methane_corr
 ```
+
+
 ```{r}
-merged_ch4
+cor(merged_ch4$ch4_vnf_10km, merged_ch4$ch4_trailer, use = 'complete')
+
+cor(merged_ch4$ch4_vnf_20km, merged_ch4$ch4_trailer, use = 'complete')
 ```
+
 
 
