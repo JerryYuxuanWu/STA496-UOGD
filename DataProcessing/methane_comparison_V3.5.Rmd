@@ -17,7 +17,7 @@ library(geosphere)
 # Load in trailer Methane
 Trailer <- readRDS('TrailerProcessed-20240601.rds')
 
-trailer_ch4 <- Trailer %>% select(time_utc, ch4) %>%
+trailer_ch4_CO_NOx_wind <- Trailer %>% select(time_utc, ch4, co, nox, wdr_deg, wsp_ms) %>%
   mutate(day = as.Date(format(as.POSIXct(time_utc), '%Y-%m-%d')))
 ```
 
@@ -43,34 +43,36 @@ vnf <- vnf %>%
 
 radius <- c(5, 10, 20, 50, 100)
 
-methane_corr <- tibble(radius = radius, 
-                       n = rep(0, length(radius)), 
-                       correlation = rep(0, length(radius)))
+trailer_compounds <- c('ch4', 'co', 'nox')
 
+corr_result <- tibble(radius = numeric(), 
+                      trailer_compound = character(),
+                      corr = numeric())
 for (r in radius) {
   temp <- vnf %>%
     filter(distToLovi <= r)
   
-  merged_ch4 <- temp %>%
+  merged <- temp %>%
     select(date, methane_eq) %>%
     group_by(date) %>%
     summarise(avg_methane_eq = mean(methane_eq)) %>%
-    left_join(trailer_ch4 %>% 
-                select(day, ch4) %>% 
+    left_join(trailer_ch4_CO_NOx_wind %>% 
+                select(-time_utc) %>% 
                 group_by(day) %>% 
-                summarise(avg_ch4 = mean(ch4, na.rm=T)), 
+                summarise(across(everything(), ~mean(.x, na.rm=T))), 
               join_by(date == day)) %>%
-  rename('ch4_vnf' =  'avg_methane_eq', 
-         'ch4_trailer' = 'avg_ch4')
+  rename('ch4_vnf' =  'avg_methane_eq')
   
-  methane_corr <- methane_corr %>%
-    rows_update(tibble(radius = r, 
-                       n = nrow(merged_ch4),
-                       correlation = cor(merged_ch4$ch4_vnf,
-                                         merged_ch4$ch4_trailer)), by = 'radius')
+  corr <- tibble(trailer_compound = trailer_compounds, corr = sapply(trailer_compounds, function(x) cor(merged$ch4_vnf, merged%>%pull(x), use = 'complete')))
+  
+  corr_result <- corr_result %>%
+    left_join(corr %>% mutate(radius = r), join_by(radius))
 }
 
-methane_corr
+corr_result
+```
+```{r}
+
 ```
 
 
