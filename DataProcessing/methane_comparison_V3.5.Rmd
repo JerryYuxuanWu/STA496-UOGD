@@ -11,6 +11,10 @@ output:
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(geosphere)
+library(circular)
+library(lwgeom)
+library(sf)
+library(units)
 ```
 
 ```{r}
@@ -40,41 +44,134 @@ distance_km_lov <- function(long, lati){
 
 vnf <- vnf %>% 
   mutate(distToLovi = mapply(distance_km_lov, lon, lat))
+```
+
+```{r}
+# Preprocessing
+vnf_200km <- vnf %>%
+  filter(distToLovi <= 200)
 
 radius <- c(5, 10, 20, 50, 100)
 
 trailer_compounds <- c('ch4', 'co', 'nox')
 
+# Compute daily average
+trailer_daily <- trailer_ch4_CO_NOx_wind %>% 
+  select(-time_utc) %>% 
+  group_by(day) %>% 
+  summarise(across(!wdr_deg, ~mean(.x, na.rm=T)),
+            wdr_deg = as.numeric(mean(circular(wdr_deg, units = "degrees"), na.rm=T))) %>%
+  mutate(wdr_deg = if_else(wdr_deg < 0, wdr_deg+360, wdr_deg))
+  
+
+# Compute average measurement from 6pm to 6am
+trailer_night_avg <- trailer_ch4_CO_NOx_wind %>% 
+  filter(hour(ymd_hms(time_utc)) <= 6 |
+           hour(ymd_hms(time_utc)) >= 18) %>%
+  select(-time_utc) %>% 
+  group_by(day) %>% 
+  summarise(across(everything(), ~mean(.x, na.rm=T))) %>%
+  mutate(wdr_deg = if_else(wdr_deg < 0, wdr_deg+360, wdr_deg))
+
+# Compute flare angle
+angles <- tibble(st_sfc(st_point(loving_lonlat), crs = 4326), 
+                 vnf_200km[,c('lon', 'lat')] %>% 
+                   st_as_sf(coords = c('lon', 'lat')) %>% 
+                   st_set_crs(4326)) %>%
+                pivot_longer(cols = everything()) %>% 
+                pull(value) %>% # extract coordinates only
+                st_geod_azimuth() %>%
+                set_units('degrees') %>% # convert to degrees
+                drop_units()
+angles <- angles[c(T, F)] # keep only odd index, valid pairs
+angles <- if_else(angles < 0, angles + 360, angles)
+vnf_200km$angle <- angles
+
 corr_result <- tibble(radius = numeric(), 
                       trailer_compound = character(),
                       corr = numeric())
+
+vnf_trailer_full <- tibble(date = vnf_200km %>%
+    filter(distToLovi <= max(radius)) %>% pull(date) %>% unique()) %>%
+    left_join(trailer_daily, 
+              join_by(date == day)) %>%
+    left_join(trailer_night_avg, 
+              join_by(date == day), suffix = c('.day', '.night'))
+
 for (r in radius) {
-  temp <- vnf %>%
+  # Filter for flares within radius r
+  temp <- vnf_200km %>%
     filter(distToLovi <= r)
   
-  merged <- temp %>%
-    select(date, methane_eq) %>%
+  # For those flares, get average methane_eq then join with trailer data
+  # NOTE: since we have a n-to-1 mapping between flares and trailer, 
+  # it is difficult to get a single wind difference value for each day.
+  # Instead, I will check if there exists a flare in a similar direction as wind
+  flare_is_from_wd <- temp %>%
+    left_join(trailer_daily, 
+              join_by(date == day)) %>%
+    left_join(trailer_night_avg, 
+              join_by(date == day), suffix = c('.day', '.night')) %>%
+    group_by(date) %>%
+    summarise(flare_wd_day = any(abs(angle - wdr_deg.day) <= 15),
+              flare_wd_night = any(abs(angle - wdr_deg.night) <= 15),
+              flare_count = n()) %>%
+    rename(setNames(c('flare_wd_day', 'flare_wd_night', 'flare_count'), paste0(c('flare_wd_day_', 'flare_wd_night_', 'flare_count_'), r)))
+
+  temp <- temp %>%
+    select(date, methane_eq, angle) %>%
     group_by(date) %>%
     summarise(avg_methane_eq = mean(methane_eq)) %>%
-    left_join(trailer_ch4_CO_NOx_wind %>% 
-                select(-time_utc) %>% 
-                group_by(day) %>% 
-                summarise(across(everything(), ~mean(.x, na.rm=T))), 
+    rename(setNames('avg_methane_eq', paste0('avg_methane_eq_', r)))
+  
+  merged <- temp %>%
+    left_join(trailer_daily, 
               join_by(date == day)) %>%
-  rename('ch4_vnf' =  'avg_methane_eq')
+    left_join(trailer_night_avg, 
+              join_by(date == day), suffix = c('.day', '.night')) %>%
+    left_join(flare_is_from_wd, join_by(date)) %>%
+    rename(setNames(paste0('avg_methane_eq_', r), 'ch4_vnf'))
   
-  corr <- tibble(trailer_compound = trailer_compounds, corr = sapply(trailer_compounds, function(x) cor(merged$ch4_vnf, merged%>%pull(x), use = 'complete')))
+  vnf_trailer_full <- vnf_trailer_full %>%
+    left_join(temp, join_by(date)) %>%
+    left_join(flare_is_from_wd, join_by(date))
+              
+  corr <- tibble(radius = r, 
+                 trailer_compound = trailer_compounds, 
+                 daily_corr = sapply(paste0(trailer_compounds, '.day'), 
+                               function(x) cor(merged$ch4_vnf, merged[[x]], 
+                                               use = 'complete')),
+                 nightly_corr = sapply(paste0(trailer_compounds, '.night'), 
+                               function(x) cor(merged$ch4_vnf, merged[[x]], 
+                                               use = 'complete')))
   
-  corr_result <- corr_result %>%
-    left_join(corr %>% mutate(radius = r), join_by(radius))
+  corr_result <- rbind(corr_result, corr)
 }
 
-corr_result
+knitr::kable(corr_result %>% arrange(trailer_compound, radius), digits = 3)
 ```
 ```{r}
+ch4_nox_5km <- lm(avg_methane_eq_5 ~ ch4.night + co.night + nox.night + wdr_deg.night + wsp_ms.night + flare_wd_night_5 + flare_count_5, data = vnf_trailer_full)
+summary(ch4_nox_5km)
 
+ch4_nox_10km <- lm(avg_methane_eq_10 ~ ch4.night + co.night + nox.night + wdr_deg.night + wsp_ms.night + flare_wd_night_10 + flare_count_10, data = vnf_trailer_full)
+summary(ch4_nox_10km)
+
+ch4_nox_20km <- lm(avg_methane_eq_20 ~ ch4.night + co.night + nox.night + wdr_deg.night + wsp_ms.night + flare_wd_night_20 + flare_count_20, data = vnf_trailer_full)
+summary(ch4_nox_20km)
+
+ch4_nox_50km <- lm(avg_methane_eq_50 ~ ch4.night + co.night + nox.night + wdr_deg.night + wsp_ms.night + flare_wd_night_50 + flare_count_50, data = vnf_trailer_full)
+summary(ch4_nox_50km)
+
+ch4_nox_100km <- lm(avg_methane_eq_100 ~ ch4.night + co.night + nox.night + wdr_deg.night + wsp_ms.night + flare_wd_night_100 + flare_count_100, data = vnf_trailer_full)
+summary(ch4_nox_100km)
 ```
 
+```{r}
+# Regress concentration of CH4 against wind and flare
+ch4_count_20km <- lm(ch4.night ~ wdr_deg.night + wsp_ms.night + flare_wd_night_20 + flare_count_20, data = vnf_trailer_full)
+summary(ch4_count_20km)
+```
 
 
 
