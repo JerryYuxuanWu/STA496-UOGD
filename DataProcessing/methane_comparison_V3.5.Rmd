@@ -21,8 +21,9 @@ library(units)
 # Load in trailer Methane
 Trailer <- readRDS('TrailerProcessed-20240601.rds')
 
-trailer_ch4_CO_NOx_wind <- Trailer %>% select(time_utc, ch4, co, nox, wdr_deg, wsp_ms) %>%
-  mutate(day = as.Date(format(as.POSIXct(time_utc), '%Y-%m-%d')))
+trailer_comps_wind <- Trailer %>% select(time_utc, ch4, co, co2_ppm, nox, benzene, wdr_deg, wsp_ms) %>%
+  mutate(day = as.Date(format(as.POSIXct(time_utc), '%Y-%m-%d'))) %>%
+  rename('co2' = 'co2_ppm')
 ```
 
 ```{r}
@@ -53,10 +54,10 @@ vnf_200km <- vnf %>%
 
 radius <- c(5, 10, 20, 50, 100)
 
-trailer_compounds <- c('ch4', 'co', 'nox')
+trailer_compounds <- c('ch4', 'co', 'co2', 'nox', 'benzene')
 
 # Compute daily average
-trailer_daily <- trailer_ch4_CO_NOx_wind %>% 
+trailer_daily <- trailer_comps_wind %>% 
   select(-time_utc) %>% 
   group_by(day) %>% 
   summarise(across(!wdr_deg, ~mean(.x, na.rm=T)),
@@ -65,9 +66,8 @@ trailer_daily <- trailer_ch4_CO_NOx_wind %>%
   
 
 # Compute average measurement from 6pm to 6am
-trailer_night_avg <- trailer_ch4_CO_NOx_wind %>% 
-  filter(hour(ymd_hms(time_utc)) <= 6 |
-           hour(ymd_hms(time_utc)) >= 18) %>%
+trailer_night_avg <- trailer_comps_wind %>% 
+  filter(hour(ymd_hms(time_utc)) <= 6 ) %>%
   select(-time_utc) %>% 
   group_by(day) %>% 
   summarise(across(everything(), ~mean(.x, na.rm=T))) %>%
@@ -89,7 +89,9 @@ vnf_200km$angle <- angles
 
 corr_result <- tibble(radius = numeric(), 
                       trailer_compound = character(),
-                      corr = numeric())
+                      flare_count = numeric(),
+                      daily_corr = numeric(),
+                      nightly_corr = numeric())
 
 vnf_trailer_full <- tibble(date = vnf_200km %>%
     filter(distToLovi <= max(radius)) %>% pull(date) %>% unique()) %>%
@@ -113,9 +115,9 @@ for (r in radius) {
     left_join(trailer_night_avg, 
               join_by(date == day), suffix = c('.day', '.night')) %>%
     group_by(date) %>%
-    summarise(flare_wd_day = any(abs(angle - wdr_deg.day) <= 15),
-              flare_wd_night = any(abs(angle - wdr_deg.night) <= 15),
-              flare_count = n()) %>%
+    summarise(flare_wd_day = sum(abs(angle - wdr_deg.day) <= 30),
+              flare_wd_night = sum(abs(angle - wdr_deg.night) <= 30),
+              flare_count = length(unique(vnf_id))) %>%
     rename(setNames(c('flare_wd_day', 'flare_wd_night', 'flare_count'), paste0(c('flare_wd_day_', 'flare_wd_night_', 'flare_count_'), r)))
 
   temp <- temp %>%
@@ -138,6 +140,9 @@ for (r in radius) {
               
   corr <- tibble(radius = r, 
                  trailer_compound = trailer_compounds, 
+                 flare_count = merged %>% 
+                   pull(paste0('flare_count_', r)) %>%
+                   sum(),
                  daily_corr = sapply(paste0(trailer_compounds, '.day'), 
                                function(x) cor(merged$ch4_vnf, merged[[x]], 
                                                use = 'complete')),
@@ -151,19 +156,19 @@ for (r in radius) {
 knitr::kable(corr_result %>% arrange(trailer_compound, radius), digits = 3)
 ```
 ```{r}
-ch4_nox_5km <- lm(avg_methane_eq_5 ~ ch4.night + co.night + nox.night + wdr_deg.night + wsp_ms.night + flare_wd_night_5 + flare_count_5, data = vnf_trailer_full)
+ch4_nox_5km <- lm(avg_methane_eq_5 ~ ch4.night + co.night + co2.night + nox.night + benzene.night + wsp_ms.night + flare_wd_night_5 + flare_count_5, data = vnf_trailer_full)
 summary(ch4_nox_5km)
 
-ch4_nox_10km <- lm(avg_methane_eq_10 ~ ch4.night + co.night + nox.night + wdr_deg.night + wsp_ms.night + flare_wd_night_10 + flare_count_10, data = vnf_trailer_full)
+ch4_nox_10km <- lm(avg_methane_eq_10 ~ ch4.night + co.night + co2.night + nox.night + benzene.night + wsp_ms.night + flare_wd_night_10 + flare_count_10, data = vnf_trailer_full)
 summary(ch4_nox_10km)
 
-ch4_nox_20km <- lm(avg_methane_eq_20 ~ ch4.night + co.night + nox.night + wdr_deg.night + wsp_ms.night + flare_wd_night_20 + flare_count_20, data = vnf_trailer_full)
+ch4_nox_20km <- lm(avg_methane_eq_20 ~ ch4.night + co.night + co2.night + nox.night + benzene.night + wdr_deg.night + wsp_ms.night + flare_wd_night_20 + flare_count_20, data = vnf_trailer_full)
 summary(ch4_nox_20km)
 
-ch4_nox_50km <- lm(avg_methane_eq_50 ~ ch4.night + co.night + nox.night + wdr_deg.night + wsp_ms.night + flare_wd_night_50 + flare_count_50, data = vnf_trailer_full)
+ch4_nox_50km <- lm(avg_methane_eq_50 ~ ch4.night + co.night + co2.night + nox.night + benzene.night + wdr_deg.night + wsp_ms.night + flare_wd_night_50 + flare_count_50, data = vnf_trailer_full)
 summary(ch4_nox_50km)
 
-ch4_nox_100km <- lm(avg_methane_eq_100 ~ ch4.night + co.night + nox.night + wdr_deg.night + wsp_ms.night + flare_wd_night_100 + flare_count_100, data = vnf_trailer_full)
+ch4_nox_100km <- lm(avg_methane_eq_100 ~ ch4.night + co.night + co2.night + nox.night + benzene.night + wsp_ms.night + flare_wd_night_100 + flare_count_100, data = vnf_trailer_full)
 summary(ch4_nox_100km)
 ```
 
@@ -171,6 +176,10 @@ summary(ch4_nox_100km)
 # Regress concentration of CH4 against wind and flare
 ch4_count_20km <- lm(ch4.night ~ wdr_deg.night + wsp_ms.night + flare_wd_night_20 + flare_count_20, data = vnf_trailer_full)
 summary(ch4_count_20km)
+
+# Regress concentration of Benzene against wind and flare
+benzene_count_20km <- lm(benzene.night ~ wdr_deg.night + wsp_ms.night + flare_wd_night_20 + flare_count_20, data = vnf_trailer_full)
+summary(benzene_count_20km)
 ```
 
 
