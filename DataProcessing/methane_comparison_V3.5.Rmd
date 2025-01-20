@@ -27,24 +27,27 @@ trailer_comps_wind <- Trailer %>% select(time_utc, ch4, co, co2_ppm, nox, benzen
 ```
 
 ```{r}
-# Load in VNF data
-vnf <- readRDS('pb-vnf_20230501-20240601.rds')
-
-vnf <- vnf %>% 
-  mutate(across(where(is.numeric),  ~ na_if(.x, 999999))) %>% # replace 999999 as missing
-  filter(!(is.na(temp_bb) | is.na(methane_eq))) # keep those not missing temperature
-
-vnf <- vnf %>%
-  filter(temp_bb >= 1600)
-
+# # Load in VNF data
+# vnf <- readRDS('pb-vnf_20230501-20240601.rds')
+# 
+# vnf <- vnf %>% 
+#   mutate(across(where(is.numeric),  ~ na_if(.x, 999999))) %>% # replace 999999 as missing
+#   filter(!(is.na(temp_bb) | is.na(methane_eq))) # keep those not missing temperature
+# 
+# vnf <- vnf %>%
+#   filter(temp_bb >= 1600)
+# 
 loving_lonlat <- c(-104.1089, 32.2961)
-distance_km_lov <- function(long, lati){
-  start <- c(long, lati)
-  distGeo(start, loving_lonlat) / 1000
-}
-
-vnf <- vnf %>% 
-  mutate(distToLovi = mapply(distance_km_lov, lon, lat))
+# distance_km_lov <- function(long, lati){
+#   start <- c(long, lati)
+#   distGeo(start, loving_lonlat) / 1000
+# }
+# 
+# vnf <- vnf %>% 
+#   mutate(distToLovi = mapply(distance_km_lov, lon, lat))
+# 
+# saveRDS(vnf, 'vnf_cleaned_20230501-20240601.rds')
+vnf <- readRDS('vnf_cleaned_20230501-20240601.rds')
 ```
 
 ```{r}
@@ -173,14 +176,46 @@ summary(ch4_nox_100km)
 ```
 
 ```{r}
-# Regress concentration of CH4 against wind and flare
-ch4_count_20km <- lm(ch4.night ~ wdr_deg.night + wsp_ms.night + flare_wd_night_20 + flare_count_20, data = vnf_trailer_full)
-summary(ch4_count_20km)
+# Variables for the model
+response <- c('ch4', 'benzene', 'co', 'co2')
+predictors_fixed <- c('wdr_deg.night', 'wsp_ms.night')
+predictors_dist_var <- c('flare_wd_night', 'flare_count')
+distances <- c(10, 20)
 
-# Regress concentration of Benzene against wind and flare
-benzene_count_20km <- lm(benzene.night ~ wdr_deg.night + wsp_ms.night + flare_wd_night_20 + flare_count_20, data = vnf_trailer_full)
-summary(benzene_count_20km)
+# Tibble to store the result
+compound_flare_lm_result <- tibble(Compound = character(),
+                                   Radius = numeric(),
+                                   'Adj R-sq' = numeric())
+for (trailer_compound in response) {
+  for (distance in distances) {
+    predictors_dist_var_temp <- paste0(predictors_dist_var, paste0('_', distance))
+    formula_feature_str <- paste(c(predictors_fixed, predictors_dist_var_temp), collapse = ' + ')
+    formula_str <- paste(paste0(trailer_compound, '.night'), formula_feature_str, sep = ' ~ ')
+    formula <- as.formula(formula_str)
+    
+    model <- lm(formula, data = vnf_trailer_full)
+    assign(paste0(trailer_compound, '_count_', distance, 'km'), model)
+    summary <- summary(model)
+    
+    compound_flare_lm_result <- compound_flare_lm_result %>%
+      add_row(Compound = trailer_compound,
+              Radius = distance,
+              'Adj R-sq' = summary$adj.r.squared)
+  }
+}
+compound_flare_lm_result
 ```
+
+```{r}
+# Look at the models specifically
+for (trailer_compound in response) {
+  for (distance in distances) {
+    cat('--------------Compound: ', toupper(trailer_compound), ', Radius: ', distance, '---------------', sep = '')
+    print(summary(get(paste0(trailer_compound, '_count_', distance, 'km'))))
+  }
+}
+```
+
 
 
 
