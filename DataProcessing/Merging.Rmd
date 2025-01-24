@@ -48,16 +48,16 @@ flaring_daily <- flaring %>%
   group_by(substr(date, 1, 10)) %>% 
   summarize(temp_bb = mean(temp_bb),
             closest.flare = min(distToLovi),
-            distToLovi = mean(distToLovi),
+            distToLovi = mean(distToLovi, na.rm=T),
             inv_dist = mean(inv_dist),
             weighted.count = sum(inv_dist) * 100,
             rhi = mean(rhi),
             esf_bb = mean(esf_bb),
             n_flare_100 = n(),
-            n_flare_30 = sum(distToLovi <= 30),
-            n_flare_20 = sum(distToLovi <= 20),
-            n_flare_10 = sum(distToLovi <= 10),
-            n_flare_5 = sum(distToLovi <= 5)) %>% 
+            n_flare_30 = coalesce(sum(distToLovi <= 30), 0),
+            n_flare_20 = coalesce(sum(distToLovi <= 20), 0),
+            n_flare_10 = coalesce(sum(distToLovi <= 10), 0),
+            n_flare_5 = coalesce(sum(distToLovi <= 5), 0)) %>% 
   rename(date = `substr(date, 1, 10)`)
 ```
 
