@@ -526,7 +526,7 @@ normalized_daily_data_5c_less_o3 <- readRDS('result_rfiles/normalized_daily_data
 ```
 
 - 1) number of flares in 100km of trailer associated with NMF 
-- 2) weighted cout based on distance to trailer
+- 2) weighted count based on distance to trailer
 
 ```{r}
 # Check if relationship between # flares and flare factor (4 & 5)
