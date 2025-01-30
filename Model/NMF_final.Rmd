@@ -549,8 +549,15 @@ flare_factor_weighted_2 <- lm(weighted.count ~ Factor1 + Factor2 + Factor3 + Fac
 summary(flare_factor_weighted_2)
 
 # Wind direction from 270 to 45 is left as reference group.
-flare_factor_weighted_3 <- lm(weighted.count ~ Factor4 + Factor5 + wsp_ms + wind_45_135 + wind_135_180 + Factor5*wind_180_270, data = normalized_daily_data_5c_less_o3)
+flare_factor_weighted_3 <- lm(weighted.count ~ Factor4 + Factor5 + wsp_ms + Factor5*wind_180_270, data = normalized_daily_data_5c_less_o3)
 summary(flare_factor_weighted_3)
+
+# Wind direction from east
+flare_factor_weighted_4 <- lm(weighted.count ~ wsp_ms + Factor5*wind_45_135, data = normalized_daily_data_5c_less_o3)
+summary(flare_factor_weighted_4)
+
+flare_factor_weighted_4 <- lm(weighted.count ~ Factor4 + Factor5 + wsp_ms + Factor4*wind_45_135, data = normalized_daily_data_5c_less_o3)
+summary(flare_factor_weighted_4)
 ```
 
 ```{r}
