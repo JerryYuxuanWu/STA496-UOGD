@@ -1,0 +1,568 @@
+---
+title: "NMF Final (Only nndsvd 5 component without ozone)"
+author: "William Zhang, Eva, Jerry"
+date: "2025-01-24"
+output:
+  pdf_document: default
+  html_document: default
+---
+```{r setup, warning = FALSE, message = FALSE}
+# load the packages
+library(NMF)
+library(tidyverse)
+library(gridExtra)
+library(readxl)
+library(circular)
+library(lwgeom)
+library(units)
+```
+
+# Procedure
+1. Remove hourly observation with missing observation for any chemical
+2. Remove background noise level using min values (except for chemicals with minimum value < 2\*LOD and maximum value > 100\*LOD)
+3. Zero values are converted to a random value between 0 and 0.5\*LOD
+4. Normalize using min and max
+5. Remove Ozone (wouldn't affect # of obs.)
+
+## Reading the data
+```{r}
+hourly_data <- readRDS("../DataProcessing/Trailer_hourly_merge_20240905.rds")
+```
+
+```{r}
+# PROCEDURE STEP 1:
+hourly_data <- hourly_data %>% rename('co2' = 'co2_ppm')
+
+vocs <- c("ethane", "ethene", "propane", "propene",
+                                        "1_3-butadiene", "i-butane", "n-butane",
+                                        "acetylene", "cyclopentane", "i-pentane",
+                                        "n-pentane", "n-hexane", "isoprene", "n-heptane",
+                                        "benzene", "n-octane", "toluene", "ethyl-benzene", 
+                                        "m&p-xylene", "o-xylene")
+
+
+non_vocs <- c('ch4', 'co2', 'co', 'h2s', 'so2', 'nox', 'o3')
+
+# remove row with missing obs for any chemical
+hourly_nona <- hourly_data %>% 
+  select(any_of(c('day', 'time_utc', vocs, non_vocs, 'wdr_deg', 'wsp_ms'))) %>% 
+  na.omit()
+
+# retrieving the vocs, removing everything else except the vocs
+hourly_vocs <- hourly_nona %>% select(any_of(vocs))
+
+# retrieving the non-vocs: co2_ppm, nox, ch4, h2s, so2, o3
+# double check this
+hourly_non_vocs <- hourly_nona %>% select(any_of(non_vocs)) 
+
+hourly_full_nona <- cbind(hourly_non_vocs, hourly_vocs)
+
+# retrive a vector of yearmonth
+hourly_dates <- hourly_nona %>% 
+  mutate(yearmonth = substring(day, 0, 7)) %>%
+  pull(yearmonth)
+``` 
+
+## Data visualisation
+```{r, echo = FALSE}
+non_vocs <- c('ch4', 'co2', 'co', 'h2s', 'so2', 'nox', 'o3')
+for (compound in non_vocs) {
+  assign(paste0(compound, '_boxplot'), 
+         ggplot(hourly_non_vocs) +
+           geom_boxplot(aes(x = .data[[compound]])) +
+           labs(y = compound, x = '') +
+           theme_minimal())
+}
+
+grid.arrange(ch4_boxplot, co2_boxplot, co_boxplot, nrow = 3)
+```
+
+```{r, echo = FALSE}
+grid.arrange(h2s_boxplot, so2_boxplot, nox_boxplot, o3_boxplot, nrow = 4)
+```
+
+```{r, echo = FALSE}
+for (compound in vocs) {
+  assign(paste0(compound, '_boxplot'), 
+         ggplot(hourly_vocs) +
+           geom_boxplot(aes(x = .data[[compound]])) +
+           labs(y = compound, x = '') +
+           theme_minimal())
+}
+grid.arrange(get(paste0(vocs[1], '_boxplot')), get(paste0(vocs[2], '_boxplot')), 
+             get(paste0(vocs[3], '_boxplot')), get(paste0(vocs[4], '_boxplot')), nrow = 4)
+```
+
+```{r, echo = FALSE}
+grid.arrange(get(paste0(vocs[5], '_boxplot')), get(paste0(vocs[6], '_boxplot')), 
+             get(paste0(vocs[7], '_boxplot')), get(paste0(vocs[8], '_boxplot')), nrow = 4)
+```
+
+```{r, echo = FALSE}
+grid.arrange(get(paste0(vocs[9], '_boxplot')), get(paste0(vocs[10], '_boxplot')), 
+             get(paste0(vocs[11], '_boxplot')), get(paste0(vocs[12], '_boxplot')), nrow = 4)
+```
+
+```{r, echo = FALSE}
+grid.arrange(get(paste0(vocs[13], '_boxplot')), get(paste0(vocs[14], '_boxplot')), 
+             get(paste0(vocs[15], '_boxplot')), get(paste0(vocs[16], '_boxplot')), nrow = 4)
+```
+
+```{r, echo = FALSE}
+grid.arrange(get(paste0(vocs[17], '_boxplot')), get(paste0(vocs[18], '_boxplot')), 
+             get(paste0(vocs[19], '_boxplot')), get(paste0(vocs[20], '_boxplot')), nrow = 4)
+```
+
+### Data preprocessing
+```{r, message = FALSE}
+# Define LOD for each chemical
+LOD_non_voc <- c('ch4' = 0.9, 
+             'co2' = 0.0433, 
+             'co' = 40,
+             'h2s' = 0.4, 
+             'so2' = 0.4,
+             'nox' = 0.05, 
+             'o3' = 1)
+
+# LOD_voc_monthly <- read_csv('../data/LNM_VOC_LOD_Rounded.csv') %>% select(-1)
+# 
+# # extract the yearmonth from date variables
+# LOD_voc_monthly <- LOD_voc_monthly %>%
+#   mutate(yearmonth = strftime(as.POSIXct(start_date, format = '%Y-%m-%d %H:%M:%S', tz = 'UTC'), '%Y-%m')) 
+# 
+# LOD_voc_monthly <- LOD_voc_monthly %>% 
+#   select(-c(start_date, end_date)) %>%
+#   select(!any_of(ends_with('half_ldl')))
+# 
+# colnames(LOD_voc_monthly) <- str_replace_all(names(LOD_voc_monthly), '_ldl', '')
+
+LOD_voc_avg <- read_xlsx('../data/LNM_VOC_Uncertainties.xlsx', skip = 1)
+LOD_voc_avg <- LOD_voc_avg %>%
+  select(1, 4) %>%
+  rename('LOD' = 2, 'chemical' = 1) %>%
+  head(20)
+```
+
+```{r}
+# find the min for background-levels
+background_levels <- sapply(hourly_full_nona, min)
+background_levels
+```
+
+```{r}
+# Show a table of summary statistics
+get_info <- function(column) {
+  N <- length(column)
+  background <- quantile(column, 0)
+  quantile1 <- quantile(column, 0.01)
+  quantile99 <- quantile(column, 0.99)
+  n_background <- sum(column == background)
+  max <- max(column)
+  return(c(N, quantile1, quantile99, max, background, n_background))
+}
+
+info_table <- hourly_full_nona %>%
+  reframe(across(everything(), ~ get_info(.x)))
+
+info_table <- info_table %>%  
+  mutate(rownames = c('N', '1st percentile', '99th percentile', 'Max', 'Background', '# Background')) %>%
+  pivot_longer(-rownames) %>%   
+  pivot_wider(names_from = rownames, values_from = value) 
+
+knitr::kable(info_table)
+```
+
+```{r}
+# PROCEDURE STEP 2:
+#adjustments that were made according to paper
+#William: I'm guessing this refers to Gunnar's paper section 2.2 and Guha 3.3
+
+# Check whether chemical has background noise level that needs to be removed
+# i.e, NO ADJUSTMENT if minimum value < 2*LOD and maximum value > 100*LOD
+adjusting_neg_bg_from_lod <- function(chemical, LOD, background, hourly_data){ 
+    # get min and max
+    min_value <- min(hourly_data[chemical], na.rm = TRUE)
+    max_value <- max(hourly_data[chemical], na.rm = TRUE)
+    # if min less than double LOD or max > 100 times LOD
+    # adjust to -100 (for entire column???)
+    if (min_value < 2 * LOD & max_value > 100 * LOD ){
+      return (0)
+    }
+  return (background)
+}
+```
+
+```{r}
+# Check if background is negligible for non voc
+# merge background and LOD
+background_lod_non_voc <- tibble(chemical = non_vocs,
+                                 LOD = LOD_non_voc,
+                                 background = unname(background_levels[non_vocs]))
+adjusted_background_non_voc <- background_lod_non_voc %>%
+  rowwise() %>%
+  mutate(min = min(hourly_full_nona[chemical], na.rm = TRUE),
+         LODx2 = 2 * LOD,
+         criterion1 = min(hourly_full_nona[chemical], na.rm = TRUE) < 2 * LOD,
+         max = max(hourly_full_nona[chemical], na.rm = TRUE),
+         LODx100 = 100 * LOD,
+         criterion2 = max(hourly_full_nona[chemical], na.rm = TRUE) > 100 * LOD,
+         adjusted_background = adjusting_neg_bg_from_lod(chemical, LOD, background, hourly_full_nona))
+```
+
+```{r}
+# Check if background is negligible for voc
+# merge background and LOD
+background_lod_voc <- LOD_voc_avg %>%
+  left_join(tibble(chemical = setdiff(names(background_levels), non_vocs),
+                   background = background_levels[setdiff(names(background_levels), non_vocs)]))
+adjusted_background_voc <- background_lod_voc %>%
+  rowwise() %>%
+  mutate(min = min(hourly_full_nona[chemical], na.rm = TRUE),
+         LODx2 = 2 * LOD,
+         criterion1 = min(hourly_full_nona[chemical], na.rm = TRUE) < 2 * LOD,
+         max = max(hourly_full_nona[chemical], na.rm = TRUE),
+         LODx100 = 100 * LOD,
+         criterion2 = max(hourly_full_nona[chemical], na.rm = TRUE) > 100 * LOD,
+         adjusted_background = adjusting_neg_bg_from_lod(chemical, LOD, background, hourly_full_nona))
+```
+```{r}
+# So now we have the adjusted background concentrations
+hourly_nona_bgrm <- hourly_full_nona %>%
+  mutate(across(adjusted_background_non_voc$chemical, ~  .x - adjusted_background_non_voc$adjusted_background[adjusted_background_non_voc$chemical== cur_column()]))
+hourly_nona_bgrm <- hourly_nona_bgrm %>%
+  mutate(across(adjusted_background_voc$chemical, ~  .x - adjusted_background_voc$adjusted_background[adjusted_background_voc$chemical== cur_column()]))
+```
+
+```{r}
+# look at zero values
+colSums(hourly_nona_bgrm == 0)
+```
+
+```{r}
+# PROCEDURE STEP 3
+# replace zero values with random values between 0 and 0.5*LOD
+set.seed(123)
+replace_zero_with_random <- function(column, name, LOD_df){
+  LOD <- LOD_df$LOD[LOD_df$chemical == name]
+  column <- if_else(column == 0, round(runif(length(column), 0, 0.5 * LOD), 3), column)
+  return (column)
+}
+
+hourly_nona_bgrm_zerorepl <- hourly_nona_bgrm %>%
+  mutate(across(adjusted_background_non_voc$chemical, ~ replace_zero_with_random(.x, cur_column(), adjusted_background_non_voc)))
+
+hourly_nona_bgrm_zerorepl <- hourly_nona_bgrm_zerorepl %>%
+  mutate(across(adjusted_background_voc$chemical, ~ replace_zero_with_random(.x, cur_column(), adjusted_background_voc)))
+```
+
+
+### Normalize the non-vocs
+```{r}
+#normalizing function
+normalize_column <- function(column){
+  background <- quantile(column, 0)
+  max <- quantile(column, 1) # this could be adjusted
+  return ((column - background)/(max - background))
+}
+```
+
+```{r}
+# normalize all
+hourly_nona_bgrm_zerorepl_norm <- as_tibble(sapply(as.list(hourly_nona_bgrm_zerorepl), normalize_column)) #normalize the NON_VOC
+summary(hourly_nona_bgrm_zerorepl_norm)
+```
+
+```{r}
+normalized_matrix <- as.matrix(hourly_nona_bgrm_zerorepl_norm) #important: using the normalized VOCs for this file
+```
+
+## NMF section
+### Helper for source contributions plots
+```{r, include = FALSE}
+# Define the desired order of chemicals
+desired_order <- c(
+  # NMHCs - Alkanes
+  "ethane", "propane", "i-butane", "n-butane", "i-pentane", "n-pentane", 
+  "n-hexane", "cyclopentane", "n-heptane", "n-octane",
+  
+  # NMHCs - Alkenes
+  "ethene", "propene", "1_3-butadiene", 'isoprene',
+  
+  # NMHCs - Alkynes
+  "acetylene",
+  
+  # NMHCs - Aromatics
+  "benzene", "toluene", "ethyl-benzene", "o-xylene", "m&p-xylene",
+  
+  # Inorganic Gases - CO and CO2
+  "co", "co2",
+  
+  # Nitrogen Oxides (NOx)
+  "nox",
+  
+  # Sulfur Compounds
+  "h2s", "so2",
+  
+  # Ozone (if included)
+  "o3",
+  
+  # Methane
+  "ch4"
+)
+
+color_pal <- c("#ccd5ae", "#e9edc9", "#fefae0", "#faedcd", "#d4a373", "#df7d5a")
+
+get_component_plot <- function(data, component, title) {
+  col <- color_pal[as.numeric(component)]
+  component_data <- subset(data, Component == component)
+  component_data <- component_data %>%
+    mutate(Chemical = factor(Chemical, levels = desired_order))
+  
+  plot <- ggplot(component_data, aes(x = Chemical, y = Contribution)) +
+            geom_bar(stat = "identity", position = "dodge", fill = col) +
+            theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+            geom_text(aes(label = sprintf("%.2f", round(Contribution, 2))), color = "blue", size = 3, nudge_y = 0.1) +
+            labs(x = "Chemical", y = "Contribution", title = title)+
+            theme(
+            text = element_text(size = 14), # Base text size for all text elements
+            axis.title = element_text(size = 16), # Size of axis titles
+            axis.text = element_text(size = 12), # Size of axis text (tick labels)
+            plot.title = element_text(size = 18) # Size of the plot title
+            )
+  return(plot)
+}
+```
+
+### NMF using 'nndsvd' seed and KL divergence
+```{r}
+components <- 4:10
+errors <- numeric(length(components) - 4)
+
+# Loop over the number of components
+# for (n in components) {
+#   nmf_result <- nmf(normalized_matrix, rank = n, method = "KL", seed='nndsvd')
+#   reconstruction <- basis(nmf_result) %*% coef(nmf_result)
+#   error <- norm(normalized_matrix - reconstruction, type = "F")
+#   errors[n-3] <- error
+#   print(paste0('Completed ', n - 3, ' out of 7'))
+# }
+# 
+# saveRDS(errors, 'errors_norm.rds')
+
+errors <- readRDS('errors_norm.rds')
+```
+
+
+```{r, eval=TRUE, echo = F}
+# Plot the errors
+df <- data.frame(components, errors)
+ggplot(df, aes(x = components, y = errors)) +
+  geom_line() +
+  geom_point() +
+  theme_minimal() +
+  geom_text(aes(label = sprintf("%.3f", errors)), color = "blue", size = 3, vjust = -0.5) +
+  labs(title = "NMF Reconstruction Error vs. Number of Components",
+       x = "Number of Components", y = "Reconstruction Error")
+```
+
+## 5 Components without ozone
+```{r, message = FALSE}
+normalized_matrix_less_o3 <- normalized_matrix[ ,setdiff(colnames(normalized_matrix), "o3")]
+
+nmf_result_5c_less_o3 <- nmf(normalized_matrix_less_o3, rank = 5, method = "KL", seed='nndsvd')
+
+basis_matrix_5c_less_o3 <- basis(nmf_result_5c_less_o3)
+coef_matrix_5c_less_o3 <- coef(nmf_result_5c_less_o3)
+
+par(mfrow = c(1, 2))
+image(basis_matrix_5c_less_o3, main = "Basis Matrix (W)")
+image(coef_matrix_5c_less_o3, main = "Coefficient Matrix (H)")
+```
+
+```{r, eval=TRUE, echo = T}
+# Convert H to a data frame for ggplot
+H_df_5c_less_o3 <- as.data.frame(coef_matrix_5c_less_o3)
+# Add a column for chemicals
+H_df_5c_less_o3$Component <- rownames(H_df_5c_less_o3)
+
+# Reshape data to long format
+H_long_5c_less_o3 <- pivot_longer(H_df_5c_less_o3, cols = -Component, names_to = "Chemical", values_to = "Contribution")
+
+# Plot
+nmfplt_1_svd_5c_less_o3 <- get_component_plot(H_long_5c_less_o3, 
+                                           '1', '1) Traffic emissions factor')
+nmfplt_2_svd_5c_less_o3 <- get_component_plot(H_long_5c_less_o3, 
+                                           '2', '2) Component 2 nndsvd Less ozone, 5c')
+nmfplt_3_svd_5c_less_o3 <- get_component_plot(H_long_5c_less_o3, 
+                                           '3', '3) Oil & Gas emssions factor')
+nmfplt_4_svd_5c_less_o3 <- get_component_plot(H_long_5c_less_o3, 
+                                           '4', '4) Flaring factor II (other directions)')
+nmfplt_5_svd_5c_less_o3 <- get_component_plot(H_long_5c_less_o3, 
+                                           '5', '5) Flaring Factor I (SW pad\'s flare)')
+```
+
+```{r, eval=TRUE, echo = FALSE, fig.height=15, fig.width=16}
+grid.arrange(nmfplt_1_svd_5c_less_o3, nmfplt_2_svd_5c_less_o3, nmfplt_3_svd_5c_less_o3, nmfplt_4_svd_5c_less_o3, nmfplt_5_svd_5c_less_o3, ncol=2)
+```
+
+### Fingerprint plot
+```{r}
+contrib_prop <- apply(H_df_5c_less_o3[,1:(length(H_df_5c_less_o3)-1)], MARGIN = 2, FUN = function(x) {x/sum(x)})
+contrib_prop %>% 
+  as_tibble() %>%
+  mutate(Component = c('Traffic', 'Component 2', 'Oil & Gas', 'Flare 1', 'Flare 2')) %>%
+  pivot_longer(cols = -Component, names_to = "Chemical", values_to = "Contribution_prop") %>%
+  mutate(Chemical = factor(Chemical, levels = desired_order)) %>%
+  ggplot(aes(fill=Component, y=Contribution_prop, x=Chemical)) + 
+  geom_bar(position="fill", stat="identity") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "Chemical", y = "Contribution Proportion", 
+       title = 'Contribution proportion of each component') +
+  theme(panel.grid.major = element_blank(), 
+        panel.grid.minor = element_blank(),
+        panel.background = element_blank())
+
+```
+
+### Wind plots
+```{r}
+hourly_wind_nona <- hourly_nona %>%
+  select(wdr_deg, wsp_ms)
+
+data_to_plot <- tibble(
+  component1 = basis(nmf_result_5c_less_o3)[,1],
+  component2 = basis(nmf_result_5c_less_o3)[,2],
+  component3 = basis(nmf_result_5c_less_o3)[,3],
+  component4 = basis(nmf_result_5c_less_o3)[,4],
+  component5 = basis(nmf_result_5c_less_o3)[,5],
+  wd = round(hourly_wind_nona$wdr_deg, -1)
+)
+
+```
+
+```{r, eval=TRUE, echo = FALSE}
+boxplot(component1 ~ wd, data = data_to_plot,
+        outline = FALSE, col = color_pal[1],
+        main = "NMF traffic factor expression vs Wind Direction (Component 1)",
+        xlab = "Wind direction (°)",
+        ylab = "Factor expression")
+```
+
+```{r, eval=TRUE, echo = FALSE}
+boxplot(component2 ~ wd, data = data_to_plot,
+        outline = FALSE, col = color_pal[2],
+        main = "NMF factor expression vs Wind Direction (Component 2)",
+        xlab = "Wind direction (°)",
+        ylab = "Factor expression")
+```
+
+```{r, eval=TRUE, echo = FALSE}
+boxplot(component3 ~ wd, data = data_to_plot,
+        outline = FALSE, col = color_pal[3],
+        main = "NMF oil & gas factor expression vs Wind Direction (Component 3)",
+        xlab = "Wind direction (°)",
+        ylab = "Factor expression")
+```
+
+```{r, eval=TRUE, echo = FALSE}
+boxplot(component4 ~ wd, data = data_to_plot,
+        outline = FALSE, col = color_pal[4],
+        main = "NMF flaring 1 factor expression vs Wind Direction (Component 4)",
+        xlab = "Wind direction (°)",
+        ylab = "Factor expression")
+```
+
+```{r, eval=TRUE, echo = FALSE}
+boxplot(component5 ~ wd, data = data_to_plot,
+        outline = FALSE, col = color_pal[5],
+        main = "NMF flaring 2 factor expression vs Wind Direction (Component 5)",
+        xlab = "Wind direction (°)",
+        ylab = "Factor expression")
+
+```
+## Factor analysis
+
+- merge in factors 1-5 to dataset (hourly)
+```{r}
+# First look at how well this approximates
+fitted_5c_less_o3 <- fitted(nmf_result_5c_less_o3)
+sum(abs(normalized_matrix_less_o3-fitted_5c_less_o3))
+```
+```{r, eval=TRUE, echo = T}
+# NMF factorizes V = WH
+# Store Basis matrix (W) and Coef Matrix (H)
+saveRDS(basis_matrix_5c_less_o3, 'result_rfiles/nmf_norm_5c_less_o3_basis.rds')
+saveRDS(coef_matrix_5c_less_o3, 'result_rfiles/nmf_norm_5c_less_o3_coef.rds')
+
+# Merge basis matrix into hourly observations
+basis_matrix_5c_less_o3 <- as_tibble(basis_matrix_5c_less_o3) %>%
+  setNames(c('Factor1', 'Factor2', 'Factor3', 'Factor4', 'Factor5'))
+
+normalized_hourly_data_5c_less_o3 <- hourly_nona[,c('day', 'time_utc')] %>%
+  cbind(normalized_matrix_less_o3) %>%
+  cbind(basis_matrix_5c_less_o3) %>%
+  right_join(hourly_data %>% select(-'day'), join_by(time_utc), suffix = c('_norm', ''))
+
+# saveRDS(normalized_hourly_data_5c_less_o3, 'result_rfiles/normalized_hourly_data_5c_less_o3.rds')
+```
+
+- make daily dataset for VNF analysis 
+
+```{r}
+# Also compute a daily dataset
+normalized_daily_data_5c_less_o3 <- normalized_hourly_data_5c_less_o3 %>%
+  group_by(day) %>%
+  summarise(across(where(is.numeric) & !any_of('wdr_deg'), ~ mean(.x, na.rm = T)),
+            wdr_deg = as.numeric(mean(circular(wdr_deg, units = "degrees"), na.rm = T))) %>%
+  mutate(wdr_deg = if_else(wdr_deg < 0, wdr_deg+360, wdr_deg)) %>%
+  mutate(wind_45_135 = wdr_deg >= 45 & wdr_deg < 135,
+         wind_135_180 = wdr_deg >= 135 & wdr_deg < 180,
+         wind_180_270 = wdr_deg >= 180 & wdr_deg < 270,
+         wind_270_45 = wdr_deg >= 270 & wdr_deg < 45)
+
+# saveRDS(normalized_daily_data_5c_less_o3, 'result_rfiles/normalized_daily_data_5c_less_o3.rds')
+
+normalized_daily_data_5c_less_o3 <- readRDS('result_rfiles/normalized_daily_data_5c_less_o3.rds')
+```
+
+- 1) number of flares in 100km of trailer associated with NMF 
+- 2) weighted count based on distance to trailer
+
+```{r}
+# Check if relationship between # flares and flare factor (4 & 5)
+# Linear model
+flare_factor <- lm(n_flare_100 ~ Factor1 + Factor2 + Factor3 + Factor4 + Factor5, data = normalized_daily_data_5c_less_o3)
+summary(flare_factor)
+
+flare_factor45 <- lm(n_flare_100 ~ Factor4 + Factor5, data = normalized_daily_data_5c_less_o3)
+summary(flare_factor45)
+
+flare_factor_weighted <- lm(weighted.count ~ Factor1 + Factor2 + Factor3 + Factor4 + Factor5, data = normalized_daily_data_5c_less_o3)
+summary(flare_factor_weighted)
+
+flare_factor_weighted45 <- lm(weighted.count ~ Factor4 + Factor5, data = normalized_daily_data_5c_less_o3)
+summary(flare_factor_weighted45)
+```
+```{r}
+# Wind direction from 270 to 45 is left as reference group.
+flare_factor_weighted_2 <- lm(weighted.count ~ Factor1 + Factor2 + Factor3 + Factor4 + Factor5 + wsp_ms + wind_45_135 + wind_135_180 + Factor5*wind_180_270, data = normalized_daily_data_5c_less_o3)
+summary(flare_factor_weighted_2)
+
+# Wind direction from 270 to 45 is left as reference group.
+flare_factor_weighted_3 <- lm(weighted.count ~ Factor4 + Factor5 + wsp_ms + Factor5*wind_180_270, data = normalized_daily_data_5c_less_o3)
+summary(flare_factor_weighted_3)
+
+# Wind direction from east
+flare_factor_weighted_4 <- lm(weighted.count ~ wsp_ms + Factor5*wind_45_135, data = normalized_daily_data_5c_less_o3)
+summary(flare_factor_weighted_4)
+
+flare_factor_weighted_4 <- lm(weighted.count ~ Factor4 + Factor5 + wsp_ms + Factor4*wind_45_135, data = normalized_daily_data_5c_less_o3)
+summary(flare_factor_weighted_4)
+```
+
+```{r}
+# Check relationship between avg flare distance and flare factor (4 & 5)
+# Linear model
+flare_factor_dist <- lm(distToLovi ~ Factor4 + Factor5, data = normalized_daily_data_5c_less_o3)
+summary(flare_factor_dist)
+```
