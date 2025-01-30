@@ -128,7 +128,8 @@ LOD_non_voc <- c('ch4' = 0.9,
 # 
 # # extract the yearmonth from date variables
 # LOD_voc_monthly <- LOD_voc_monthly %>%
-#   mutate(yearmonth = strftime(as.POSIXct(start_date, format = '%Y-%m-%d %H:%M:%S', tz = 'UTC'), '%Y-%m')) 
+#   mutate(yearmonth = strftime(as.POSIXct(start_date, format = '%Y-%m-%d %H:%M:%S', 
+#                                             tz = 'UTC'), '%Y-%m')) 
 # 
 # LOD_voc_monthly <- LOD_voc_monthly %>% 
 #   select(-c(start_date, end_date)) %>%
@@ -165,7 +166,8 @@ info_table <- hourly_full_nona %>%
   reframe(across(everything(), ~ get_info(.x)))
 
 info_table <- info_table %>%  
-  mutate(rownames = c('N', '1st percentile', '99th percentile', 'Max', 'Background', '# Background')) %>%
+  mutate(rownames = c('N', '1st percentile', '99th percentile', 'Max', 
+                      'Background', '# Background')) %>%
   pivot_longer(-rownames) %>%   
   pivot_wider(names_from = rownames, values_from = value) 
 
@@ -206,7 +208,8 @@ adjusted_background_non_voc <- background_lod_non_voc %>%
          max = max(hourly_full_nona[chemical], na.rm = TRUE),
          LODx100 = 100 * LOD,
          criterion2 = max(hourly_full_nona[chemical], na.rm = TRUE) > 100 * LOD,
-         adjusted_background = adjusting_neg_bg_from_lod(chemical, LOD, background, hourly_full_nona))
+         adjusted_background = adjusting_neg_bg_from_lod(chemical, LOD, background, 
+                                                         hourly_full_nona))
 ```
 
 ```{r}
@@ -214,7 +217,8 @@ adjusted_background_non_voc <- background_lod_non_voc %>%
 # merge background and LOD
 background_lod_voc <- LOD_voc_avg %>%
   left_join(tibble(chemical = setdiff(names(background_levels), non_vocs),
-                   background = background_levels[setdiff(names(background_levels), non_vocs)]))
+                   background = background_levels[setdiff(names(background_levels), 
+                                                          non_vocs)]))
 adjusted_background_voc <- background_lod_voc %>%
   rowwise() %>%
   mutate(min = min(hourly_full_nona[chemical], na.rm = TRUE),
@@ -223,14 +227,19 @@ adjusted_background_voc <- background_lod_voc %>%
          max = max(hourly_full_nona[chemical], na.rm = TRUE),
          LODx100 = 100 * LOD,
          criterion2 = max(hourly_full_nona[chemical], na.rm = TRUE) > 100 * LOD,
-         adjusted_background = adjusting_neg_bg_from_lod(chemical, LOD, background, hourly_full_nona))
+         adjusted_background = adjusting_neg_bg_from_lod(chemical, LOD, background, 
+                                                         hourly_full_nona))
 ```
 ```{r}
 # So now we have the adjusted background concentrations
 hourly_nona_bgrm <- hourly_full_nona %>%
-  mutate(across(adjusted_background_non_voc$chemical, ~  .x - adjusted_background_non_voc$adjusted_background[adjusted_background_non_voc$chemical== cur_column()]))
+  mutate(across(adjusted_background_non_voc$chemical, 
+                ~  .x - adjusted_background_non_voc$adjusted_background[
+                    adjusted_background_non_voc$chemical == cur_column()]))
 hourly_nona_bgrm <- hourly_nona_bgrm %>%
-  mutate(across(adjusted_background_voc$chemical, ~  .x - adjusted_background_voc$adjusted_background[adjusted_background_voc$chemical== cur_column()]))
+  mutate(across(adjusted_background_voc$chemical, 
+                ~  .x - adjusted_background_voc$adjusted_background[
+                    adjusted_background_voc$chemical == cur_column()]))
 ```
 
 ```{r}
@@ -249,10 +258,12 @@ replace_zero_with_random <- function(column, name, LOD_df){
 }
 
 hourly_nona_bgrm_zerorepl <- hourly_nona_bgrm %>%
-  mutate(across(adjusted_background_non_voc$chemical, ~ replace_zero_with_random(.x, cur_column(), adjusted_background_non_voc)))
+  mutate(across(adjusted_background_non_voc$chemical, 
+                ~ replace_zero_with_random(.x, cur_column(), adjusted_background_non_voc)))
 
 hourly_nona_bgrm_zerorepl <- hourly_nona_bgrm_zerorepl %>%
-  mutate(across(adjusted_background_voc$chemical, ~ replace_zero_with_random(.x, cur_column(), adjusted_background_voc)))
+  mutate(across(adjusted_background_voc$chemical, 
+                ~ replace_zero_with_random(.x, cur_column(), adjusted_background_voc)))
 ```
 
 
@@ -268,12 +279,15 @@ normalize_column <- function(column){
 
 ```{r}
 # normalize all
-hourly_nona_bgrm_zerorepl_norm <- as_tibble(sapply(as.list(hourly_nona_bgrm_zerorepl), normalize_column)) #normalize the NON_VOC
+hourly_nona_bgrm_zerorepl_norm <- as_tibble(sapply(as.list(hourly_nona_bgrm_zerorepl), 
+                                                   normalize_column)) 
+#normalize the NON_VOC
 summary(hourly_nona_bgrm_zerorepl_norm)
 ```
 
 ```{r}
-normalized_matrix <- as.matrix(hourly_nona_bgrm_zerorepl_norm) #important: using the normalized VOCs for this file
+normalized_matrix <- as.matrix(hourly_nona_bgrm_zerorepl_norm) 
+#important: using the normalized VOCs for this file
 ```
 
 ## NMF section
@@ -321,7 +335,8 @@ get_component_plot <- function(data, component, title) {
   plot <- ggplot(component_data, aes(x = Chemical, y = Contribution)) +
             geom_bar(stat = "identity", position = "dodge", fill = col) +
             theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-            geom_text(aes(label = sprintf("%.2f", round(Contribution, 2))), color = "blue", size = 3, nudge_y = 0.1) +
+            geom_text(aes(label = sprintf("%.2f", round(Contribution, 2))), 
+                      color = "blue", size = 3, nudge_y = 0.1) +
             labs(x = "Chemical", y = "Contribution", title = title)+
             theme(
             text = element_text(size = 14), # Base text size for all text elements
@@ -367,9 +382,11 @@ ggplot(df, aes(x = components, y = errors)) +
 
 ## 5 Components without ozone
 ```{r, message = FALSE}
-normalized_matrix_less_o3 <- normalized_matrix[ ,setdiff(colnames(normalized_matrix), "o3")]
+normalized_matrix_less_o3 <- 
+  normalized_matrix[ ,setdiff(colnames(normalized_matrix), "o3")]
 
-nmf_result_5c_less_o3 <- nmf(normalized_matrix_less_o3, rank = 5, method = "KL", seed='nndsvd')
+nmf_result_5c_less_o3 <- nmf(normalized_matrix_less_o3, rank = 5, 
+                             method = "KL", seed='nndsvd')
 
 basis_matrix_5c_less_o3 <- basis(nmf_result_5c_less_o3)
 coef_matrix_5c_less_o3 <- coef(nmf_result_5c_less_o3)
@@ -386,7 +403,8 @@ H_df_5c_less_o3 <- as.data.frame(coef_matrix_5c_less_o3)
 H_df_5c_less_o3$Component <- rownames(H_df_5c_less_o3)
 
 # Reshape data to long format
-H_long_5c_less_o3 <- pivot_longer(H_df_5c_less_o3, cols = -Component, names_to = "Chemical", values_to = "Contribution")
+H_long_5c_less_o3 <- pivot_longer(H_df_5c_less_o3, cols = -Component, 
+                                  names_to = "Chemical", values_to = "Contribution")
 
 # Plot
 nmfplt_1_svd_5c_less_o3 <- get_component_plot(H_long_5c_less_o3, 
@@ -402,12 +420,15 @@ nmfplt_5_svd_5c_less_o3 <- get_component_plot(H_long_5c_less_o3,
 ```
 
 ```{r, eval=TRUE, echo = FALSE, fig.height=15, fig.width=16}
-grid.arrange(nmfplt_1_svd_5c_less_o3, nmfplt_2_svd_5c_less_o3, nmfplt_3_svd_5c_less_o3, nmfplt_4_svd_5c_less_o3, nmfplt_5_svd_5c_less_o3, ncol=2)
+grid.arrange(nmfplt_1_svd_5c_less_o3, nmfplt_2_svd_5c_less_o3, 
+             nmfplt_3_svd_5c_less_o3, nmfplt_4_svd_5c_less_o3, nmfplt_5_svd_5c_less_o3, 
+             ncol=2)
 ```
 
 ### Fingerprint plot
 ```{r}
-contrib_prop <- apply(H_df_5c_less_o3[,1:(length(H_df_5c_less_o3)-1)], MARGIN = 2, FUN = function(x) {x/sum(x)})
+contrib_prop <- apply(H_df_5c_less_o3[,1:(length(H_df_5c_less_o3)-1)], MARGIN = 2, 
+                      FUN = function(x) {x/sum(x)})
 contrib_prop %>% 
   as_tibble() %>%
   mutate(Component = c('Traffic', 'Component 2', 'Oil & Gas', 'Flare 1', 'Flare 2')) %>%
@@ -503,7 +524,8 @@ normalized_hourly_data_5c_less_o3 <- hourly_nona[,c('day', 'time_utc')] %>%
   cbind(basis_matrix_5c_less_o3) %>%
   right_join(hourly_data %>% select(-'day'), join_by(time_utc), suffix = c('_norm', ''))
 
-# saveRDS(normalized_hourly_data_5c_less_o3, 'result_rfiles/normalized_hourly_data_5c_less_o3.rds')
+# saveRDS(normalized_hourly_data_5c_less_o3, 
+#  'result_rfiles/normalized_hourly_data_5c_less_o3.rds')
 ```
 
 - make daily dataset for VNF analysis 
@@ -520,9 +542,11 @@ normalized_daily_data_5c_less_o3 <- normalized_hourly_data_5c_less_o3 %>%
          wind_180_270 = wdr_deg >= 180 & wdr_deg < 270,
          wind_270_45 = wdr_deg >= 270 & wdr_deg < 45)
 
-# saveRDS(normalized_daily_data_5c_less_o3, 'result_rfiles/normalized_daily_data_5c_less_o3.rds')
+# saveRDS(normalized_daily_data_5c_less_o3, 
+#  'result_rfiles/normalized_daily_data_5c_less_o3.rds')
 
-normalized_daily_data_5c_less_o3 <- readRDS('result_rfiles/normalized_daily_data_5c_less_o3.rds')
+normalized_daily_data_5c_less_o3 <- 
+  readRDS('result_rfiles/normalized_daily_data_5c_less_o3.rds')
 ```
 
 - 1) number of flares in 100km of trailer associated with NMF 
@@ -531,33 +555,84 @@ normalized_daily_data_5c_less_o3 <- readRDS('result_rfiles/normalized_daily_data
 ```{r}
 # Check if relationship between # flares and flare factor (4 & 5)
 # Linear model
-flare_factor <- lm(n_flare_100 ~ Factor1 + Factor2 + Factor3 + Factor4 + Factor5, data = normalized_daily_data_5c_less_o3)
+flare_factor <- lm(n_flare_100 ~ Factor1 + Factor2 + Factor3 + Factor4 + Factor5, 
+                   data = normalized_daily_data_5c_less_o3)
 summary(flare_factor)
 
 flare_factor45 <- lm(n_flare_100 ~ Factor4 + Factor5, data = normalized_daily_data_5c_less_o3)
 summary(flare_factor45)
 
-flare_factor_weighted <- lm(weighted.count ~ Factor1 + Factor2 + Factor3 + Factor4 + Factor5, data = normalized_daily_data_5c_less_o3)
+flare_factor_weighted <- lm(weighted.count ~ Factor1 + Factor2 + Factor3 + Factor4 + Factor5, 
+                            data = normalized_daily_data_5c_less_o3)
 summary(flare_factor_weighted)
 
-flare_factor_weighted45 <- lm(weighted.count ~ Factor4 + Factor5, data = normalized_daily_data_5c_less_o3)
+flare_factor_weighted45 <- lm(weighted.count ~ Factor4 + Factor5, 
+                              data = normalized_daily_data_5c_less_o3)
 summary(flare_factor_weighted45)
 ```
+
 ```{r}
+# All factors + wind speed + wind direction + factor5:sw wind.
 # Wind direction from 270 to 45 is left as reference group.
-flare_factor_weighted_2 <- lm(weighted.count ~ Factor1 + Factor2 + Factor3 + Factor4 + Factor5 + wsp_ms + wind_45_135 + wind_135_180 + Factor5*wind_180_270, data = normalized_daily_data_5c_less_o3)
+flare_factor_weighted_2 <- lm(weighted.count ~ Factor1 + Factor2 + Factor3 + 
+                                Factor4 + Factor5 + wsp_ms + wind_45_135 + 
+                                wind_135_180 + Factor5*wind_180_270, 
+                              data = normalized_daily_data_5c_less_o3)
 summary(flare_factor_weighted_2)
 
-# Wind direction from 270 to 45 is left as reference group.
-flare_factor_weighted_3 <- lm(weighted.count ~ Factor4 + Factor5 + wsp_ms + Factor5*wind_180_270, data = normalized_daily_data_5c_less_o3)
+# Same as above but only factor 4 and 5
+flare_factor_weighted_3 <- lm(weighted.count ~ Factor4 + Factor5 + wsp_ms + 
+                                Factor5*wind_180_270, 
+                              data = normalized_daily_data_5c_less_o3)
 summary(flare_factor_weighted_3)
 
-# Wind direction from east
-flare_factor_weighted_4 <- lm(weighted.count ~ wsp_ms + Factor5*wind_45_135, data = normalized_daily_data_5c_less_o3)
-summary(flare_factor_weighted_4)
+# Same as above but interaction between factor 4 and SW wind
+flare_factor_weighted_3b <- lm(weighted.count ~ Factor4 + Factor5 + wsp_ms + 
+                                 Factor4*wind_180_270, 
+                               data = normalized_daily_data_5c_less_o3)
+summary(flare_factor_weighted_3b)
 
-flare_factor_weighted_4 <- lm(weighted.count ~ Factor4 + Factor5 + wsp_ms + Factor4*wind_45_135, data = normalized_daily_data_5c_less_o3)
-summary(flare_factor_weighted_4)
+# Same as above but with East wind
+flare_factor_weighted_3c <- lm(weighted.count ~ Factor4 + Factor5 + wsp_ms + 
+                                 Factor5*wind_45_135, 
+                               data = normalized_daily_data_5c_less_o3)
+summary(flare_factor_weighted_3c)
+
+flare_factor_weighted_3d <- lm(weighted.count ~ Factor4 + Factor5 + wsp_ms + 
+                                 Factor4*wind_45_135, 
+                               data = normalized_daily_data_5c_less_o3)
+summary(flare_factor_weighted_3d)
+
+# Wind speed + factor 4 and interaction with East wind
+flare_factor_weighted_4a <- lm(weighted.count ~ wsp_ms + Factor4*wind_45_135, 
+                               data = normalized_daily_data_5c_less_o3)
+summary(flare_factor_weighted_4a)
+
+# Wind speed + factor 4 and interaction with SE wind
+flare_factor_weighted_4b <- lm(weighted.count ~ wsp_ms + Factor4*wind_135_180, 
+                               data = normalized_daily_data_5c_less_o3)
+summary(flare_factor_weighted_4b)
+
+# Wind speed + factor 4 and interaction with SW wind
+flare_factor_weighted_4c <- lm(weighted.count ~ wsp_ms + Factor4*wind_180_270, 
+                               data = normalized_daily_data_5c_less_o3)
+summary(flare_factor_weighted_4c)
+
+# Wind speed + factor 5 and interaction with East wind
+flare_factor_weighted_5a <- lm(weighted.count ~ wsp_ms + Factor5*wind_45_135, 
+                               data = normalized_daily_data_5c_less_o3)
+summary(flare_factor_weighted_5a)
+
+# Wind speed + factor 5 and interaction with SE wind
+flare_factor_weighted_5b <- lm(weighted.count ~ wsp_ms + Factor5*wind_135_180, 
+                               data = normalized_daily_data_5c_less_o3)
+summary(flare_factor_weighted_5b)
+
+# Wind speed + factor 5 and interaction with SW wind
+flare_factor_weighted_5c <- lm(weighted.count ~ wsp_ms + Factor5*wind_180_270, 
+                               data = normalized_daily_data_5c_less_o3)
+summary(flare_factor_weighted_5c)
+
 ```
 
 ```{r}
