@@ -4,6 +4,7 @@ author: "William Zhang, Eva, Jerry, Meredith"
 date: "2025-01-24"
 output:
   pdf_document: default
+  html_document: default
 ---
 ```{r setup, warning = FALSE, message = FALSE}
 # load the packages
@@ -464,3 +465,212 @@ image(coef_matrix_5c_less_o3, main = "Coefficient Matrix (H)")
 
 ```
 
+```{r, eval=TRUE, echo = T}
+# Convert H to a data frame for ggplot
+H_df_5c_less_o3 <- as.data.frame(coef_matrix_5c_less_o3)
+# Add a column for chemicals
+H_df_5c_less_o3$Component <- rownames(H_df_5c_less_o3)
+
+# Reshape data to long format
+H_long_5c_less_o3 <- pivot_longer(H_df_5c_less_o3, cols = -Component, 
+                                  names_to = "Chemical", values_to = "Contribution")
+
+# Plot
+nmfplt_1_svd_5c_less_o3 <- get_component_plot(H_long_5c_less_o3, 
+                                           '1', '1) Traffic emissions factor')
+nmfplt_2_svd_5c_less_o3 <- get_component_plot(H_long_5c_less_o3, 
+                                           '2', '2) Combustion from engines, turbines, compressors')
+nmfplt_3_svd_5c_less_o3 <- get_component_plot(H_long_5c_less_o3, 
+                                           '3', '3) Oil & gas fugitive and venting emssions')
+nmfplt_4_svd_5c_less_o3 <- get_component_plot(H_long_5c_less_o3, 
+                                           '4', '4) Flaring, incomplete combustion')
+nmfplt_5_svd_5c_less_o3 <- get_component_plot(H_long_5c_less_o3, 
+                                           '5', '5) Flaring, sour gas')
+```
+
+```{r, eval=TRUE, echo = FALSE, fig.height=15, fig.width=16}
+grid.arrange(nmfplt_1_svd_5c_less_o3, nmfplt_2_svd_5c_less_o3, 
+             nmfplt_3_svd_5c_less_o3, nmfplt_4_svd_5c_less_o3, nmfplt_5_svd_5c_less_o3, 
+             ncol=2)
+#ggsave("factors.png", p)
+```
+
+
+
+
+```{r, eval=FALSE, echo = FALSE}
+
+boxplot(component1 ~ wd, data = data_to_plot,
+        outline = FALSE, col = color_pal[1],
+        main = "Factor 1 - Traffic",
+        xlab = "Wind direction (°)",
+        ylab = "Factor expression")
+
+boxplot(component2 ~ wd, data = data_to_plot,
+        outline = FALSE, col = color_pal[2],
+        main = "Factor 2 - Combustion",
+        xlab = "Wind direction (°)",
+        ylab = "Factor expression")
+
+boxplot(component3 ~ wd, data = data_to_plot,
+        outline = FALSE, col = color_pal[3],
+        main = "Factor 3 - Oil & Gas Emissions",
+        xlab = "Wind direction (°)",
+        ylab = "Factor expression")
+
+boxplot(component4 ~ wd, data = data_to_plot,
+        outline = FALSE, col = color_pal[4],
+        main = "Factor 4 - Flaring",
+        xlab = "Wind direction (°)",
+        ylab = "Factor expression")
+
+boxplot(component5 ~ wd, data = data_to_plot,
+        outline = FALSE, col = color_pal[5],
+        main = "Factor 5 - Flaring Sour Gas",
+        xlab = "Wind direction (°)",
+        ylab = "Factor expression")
+
+```
+
+
+## Factor analysis
+
+- merge in factors 1-5 to dataset (hourly)
+```{r}
+# First look at how well this approximates
+fitted_5c_less_o3 <- fitted(nmf_result_5c_less_o3)
+sum(abs(normalized_matrix_less_o3-fitted_5c_less_o3))
+```
+```{r, eval=TRUE, echo = T}
+# NMF factorizes V = WH
+# Store Basis matrix (W) and Coef Matrix (H)
+saveRDS(basis_matrix_5c_less_o3, 'result_rfiles/nmf_norm_5c_less_o3_basis.rds')
+saveRDS(coef_matrix_5c_less_o3, 'result_rfiles/nmf_norm_5c_less_o3_coef.rds')
+
+# Merge basis matrix into hourly observations
+basis_matrix_5c_less_o3 <- as_tibble(basis_matrix_5c_less_o3) %>%
+  setNames(c('Factor1', 'Factor2', 'Factor3', 'Factor4', 'Factor5'))
+
+normalized_hourly_data_5c_less_o3 <- hourly_nona[,c('day', 'time_utc')] %>%
+  cbind(normalized_matrix_less_o3) %>%
+  cbind(basis_matrix_5c_less_o3) %>%
+  right_join(hourly_data %>% select(-'day'), join_by(time_utc), suffix = c('_norm', ''))
+
+# saveRDS(normalized_hourly_data_5c_less_o3, 
+#  'result_rfiles/normalized_hourly_data_5c_less_o3.rds')
+```
+
+- make daily dataset for VNF analysis 
+- compute wind directions from plots
+
+```{r}
+# Also compute a daily dataset
+normalized_daily_data_5c_less_o3 <- normalized_hourly_data_5c_less_o3 %>%
+  group_by(day) %>%
+  summarise(across(where(is.numeric) & !any_of('wdr_deg'), ~ mean(.x, na.rm = T)),
+            wdr_deg = as.numeric(mean(circular(wdr_deg, units = "degrees"), na.rm = T))) %>%
+  mutate(wdr_deg = if_else(wdr_deg < 0, wdr_deg+360, wdr_deg)) %>%
+  mutate(wind_45_135 = wdr_deg >= 45 & wdr_deg < 135,
+         wind_135_180 = wdr_deg >= 135 & wdr_deg < 180,
+         wind_180_270 = wdr_deg >= 180 & wdr_deg < 270,
+         wind_270_45 = wdr_deg >= 270 & wdr_deg < 45)
+
+# saveRDS(normalized_daily_data_5c_less_o3, 
+#  'result_rfiles/normalized_daily_data_5c_less_o3.rds')
+
+normalized_daily_data_5c_less_o3 <- 
+  readRDS('result_rfiles/normalized_daily_data_5c_less_o3.rds')
+```
+
+- 1) number of flares in 100km of trailer associated with NMF 
+- 2) weighted count based on distance to trailer
+
+```{r}
+# Check if relationship between # flares and flare factor (4 & 5)
+# Linear model
+flare_factor <- lm(n_flare_100 ~ Factor1 + Factor2 + Factor3 + Factor4 + Factor5, 
+                   data = normalized_daily_data_5c_less_o3)
+summary(flare_factor)
+
+flare_factor45 <- lm(n_flare_100 ~ Factor4 + Factor5, data = normalized_daily_data_5c_less_o3)
+summary(flare_factor45)
+
+flare_factor_weighted <- lm(weighted.count ~ Factor1 + Factor2 + Factor3 + Factor4 + Factor5, 
+                            data = normalized_daily_data_5c_less_o3)
+summary(flare_factor_weighted)
+
+flare_factor_weighted45 <- lm(weighted.count ~ Factor4 + Factor5, 
+                              data = normalized_daily_data_5c_less_o3)
+summary(flare_factor_weighted45)
+```
+
+```{r}
+# All factors + wind speed + wind direction + factor5:sw wind.
+# Wind direction from 270 to 45 is left as reference group.
+flare_factor_weighted_2 <- lm(weighted.count ~ Factor1 + Factor2 + Factor3 + 
+                                Factor4 + Factor5 + wsp_ms + wind_45_135 + 
+                                wind_135_180 + Factor5*wind_180_270, 
+                              data = normalized_daily_data_5c_less_o3)
+summary(flare_factor_weighted_2)
+
+# Same as above but only factor 4 and 5
+flare_factor_weighted_3 <- lm(weighted.count ~ Factor4 + Factor5 + wsp_ms + 
+                                Factor5*wind_180_270, 
+                              data = normalized_daily_data_5c_less_o3)
+summary(flare_factor_weighted_3)
+
+# Same as above but interaction between factor 4 and SW wind
+flare_factor_weighted_3b <- lm(weighted.count ~ Factor4 + Factor5 + wsp_ms + 
+                                 Factor4*wind_180_270, 
+                               data = normalized_daily_data_5c_less_o3)
+summary(flare_factor_weighted_3b)
+
+# Same as above but with East wind
+flare_factor_weighted_3c <- lm(weighted.count ~ Factor4 + Factor5 + wsp_ms + 
+                                 Factor5*wind_45_135, 
+                               data = normalized_daily_data_5c_less_o3)
+summary(flare_factor_weighted_3c)
+
+flare_factor_weighted_3d <- lm(weighted.count ~ Factor4 + Factor5 + wsp_ms + 
+                                 Factor4*wind_45_135, 
+                               data = normalized_daily_data_5c_less_o3)
+summary(flare_factor_weighted_3d)
+
+# Wind speed + factor 4 and interaction with East wind
+flare_factor_weighted_4a <- lm(weighted.count ~ wsp_ms + Factor4*wind_45_135, 
+                               data = normalized_daily_data_5c_less_o3)
+summary(flare_factor_weighted_4a)
+
+# Wind speed + factor 4 and interaction with SE wind
+flare_factor_weighted_4b <- lm(weighted.count ~ wsp_ms + Factor4*wind_135_180, 
+                               data = normalized_daily_data_5c_less_o3)
+summary(flare_factor_weighted_4b)
+
+# Wind speed + factor 4 and interaction with SW wind
+flare_factor_weighted_4c <- lm(weighted.count ~ wsp_ms + Factor4*wind_180_270, 
+                               data = normalized_daily_data_5c_less_o3)
+summary(flare_factor_weighted_4c)
+
+# Wind speed + factor 5 and interaction with East wind
+flare_factor_weighted_5a <- lm(weighted.count ~ wsp_ms + Factor5*wind_45_135, 
+                               data = normalized_daily_data_5c_less_o3)
+summary(flare_factor_weighted_5a)
+
+# Wind speed + factor 5 and interaction with SE wind
+flare_factor_weighted_5b <- lm(weighted.count ~ wsp_ms + Factor5*wind_135_180, 
+                               data = normalized_daily_data_5c_less_o3)
+summary(flare_factor_weighted_5b)
+
+# Wind speed + factor 5 and interaction with SW wind
+flare_factor_weighted_5c <- lm(weighted.count ~ wsp_ms + Factor5*wind_180_270, 
+                               data = normalized_daily_data_5c_less_o3)
+summary(flare_factor_weighted_5c)
+
+```
+
+```{r}
+# Check relationship between avg flare distance and flare factor (4 & 5)
+# Linear model
+flare_factor_dist <- lm(distToLovi ~ Factor4 + Factor5, data = normalized_daily_data_5c_less_o3)
+summary(flare_factor_dist)
+```
