@@ -55,7 +55,7 @@ vnf <- readRDS('vnf_cleaned_20230501-20240601.rds')
 vnf_200km <- vnf %>%
   filter(distToLovi <= 200)
 
-radius <- c(5, 10, 20, 50, 100)
+radius <- c(5, 10, 20, 30, 50, 100)
 
 trailer_compounds <- c('ch4', 'co', 'co2', 'nox', 'benzene')
 
@@ -156,7 +156,7 @@ for (r in radius) {
   corr_result <- rbind(corr_result, corr)
 }
 
-knitr::kable(corr_result %>% arrange(trailer_compound, radius), digits = 3)
+knitr::kable(corr_result %>% arrange(trailer_compound, radius), digits = 2, col.names = c("Buffer", "Compound", "Flare Count", "Correlation Day", "Correlation Night"), align="c")
 ```
 ```{r}
 ch4_nox_5km <- lm(avg_methane_eq_5 ~ ch4.night + co.night + co2.night + nox.night + benzene.night + wsp_ms.night + flare_wd_night_5 + flare_count_5, data = vnf_trailer_full)
