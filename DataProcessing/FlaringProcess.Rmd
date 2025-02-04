@@ -6,11 +6,13 @@ output: html_document
 ---
 ## Reading in RDS
 ```{r}
-library(geosphere)
+# library(geosphere)
+library(sf)
+library(units)
 ```
 
 ```{r}
-flaring <- readRDS("../data/pb_vnf/pb-vnf_230414-240901.rds")
+flaring <- readRDS("../data/loving_vnf/loving200km-vnf_230414-240901.rds")
 ```
 
 ## Filtering and Processing
@@ -29,20 +31,28 @@ Distance function, How far each flares are
 # }
 
 # 32.297345,-104.109386
-loving_lonlat <- c(-104.1089, 32.2961)
-distance_km_lov <- function(long, lati){
-  start <- c(long, lati)
-  distGeo(start, loving_lonlat) / 1000
-}
+loving_lonlat <- c(-104.1089, 32.2961) 
+loving_lonlat_sf <- st_sfc(st_point(loving_lonlat), crs = 4326) %>%
+  st_transform("+proj=utm +zone=13 ellps=WGS84")
+# distance_km_lov <- function(long, lati){
+#   start <- c(long, lati)
+#   distGeo(start, loving_lonlat) / 1000
+# }
 
-flaring <- flaring %>% 
-  mutate(distToLovi = mapply(distance_km_lov, lon, lat)) %>% 
-  select(c("date", "distToLovi", "temp_bb", "rhi", "esf_bb", "area_bb", "lon", "lat")) 
+flaring <- flaring %>%
+  st_as_sf(coords = c('lon', 'lat'), remove = F) %>%
+  st_set_crs(4326) %>%
+  st_transform("+proj=utm +zone=13 ellps=WGS84")
+
+flaring_loving <- flaring %>% 
+  mutate(distToLovi = c(drop_units(st_distance(flaring, loving_lonlat_sf)))/1000) %>% 
+  st_drop_geometry() %>%
+  select(c("date", 'time_scan', "distToLovi", "temp_bb", "rhi", "esf_bb", "area_bb", "lon", "lat")) 
 ```
 
 ### Saving
 ```{r}
-saveRDS(flaring, "FlaringProcessed.rds")
+saveRDS(flaring_loving, "FlaringProcessed.rds")
 ```
 
 

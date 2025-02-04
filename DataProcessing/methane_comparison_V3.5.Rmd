@@ -32,7 +32,8 @@ trailer_comps_wind <- Trailer %>% select(time_utc, ch4, co, co2_ppm, nox, benzen
 # 
 # vnf <- vnf %>% 
 #   mutate(across(where(is.numeric),  ~ na_if(.x, 999999))) %>% # replace 999999 as missing
-#   filter(!(is.na(temp_bb) | is.na(methane_eq))) # keep those not missing temperature
+#   filter(!(is.na(temp_bb) | is.na(methane_eq))) 
+# keep those not missing temperature or methane_eq
 # 
 # vnf <- vnf %>%
 #   filter(temp_bb >= 1600)

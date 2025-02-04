@@ -43,7 +43,7 @@ wells_prod <- wells_prod %>% filter(distToLovi <= 10) %>% select(-c("uog_lon", "
 ```
 
 
-### 20230301 to current - for Loving site
+### 20230101 to current - for Loving site
 ```{r}
 wells_prod_0301 <- wells_prod %>% filter(prod_date >= "2023-01-01")
 # replace NA with 0
@@ -58,6 +58,6 @@ wells_prod_0301 <- wells_prod_0301 %>% group_by(prod_date, distToLovi) %>%
 ```
 ```{r}
 # save to RDS
-saveRDS(wells_prod_0301, "WellsProcessed0301.rds")
+saveRDS(wells_prod_0301, "WellsProcessed20240601.rds")
 ```
 

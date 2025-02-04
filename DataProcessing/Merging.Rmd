@@ -13,7 +13,7 @@ library(tidyverse)
 flaring <- readRDS('FlaringProcessed.rds')
 Trailer <- readRDS('TrailerProcessed-20240601.rds')
 Weather <- readRDS('WeatherProcessed.rds')
-Wells <- readRDS('WellsProcessed0301.rds')
+Wells <- readRDS('WellsProcessed20240601.rds')
 ```
 
 ## A few processing
@@ -45,10 +45,10 @@ flaring$inv_dist <- ifelse(1 / flaring$distToLovi < 0.01, 0, 1 / flaring$distToL
 flaring_daily <- flaring %>% 
   # weighted_count = sum of inv_distance
   filter(distToLovi <= 100) %>% 
-  group_by(substr(date, 1, 10)) %>% 
-  summarize(temp_bb = mean(temp_bb),
+  group_by(date) %>% 
+  summarise(temp_bb = mean(temp_bb),
             closest.flare = min(distToLovi),
-            distToLovi = mean(distToLovi, na.rm=T),
+            distToLovi_mean = mean(distToLovi, na.rm=T),
             inv_dist = mean(inv_dist),
             weighted.count = sum(inv_dist) * 100,
             rhi = mean(rhi),
@@ -57,8 +57,8 @@ flaring_daily <- flaring %>%
             n_flare_30 = coalesce(sum(distToLovi <= 30), 0),
             n_flare_20 = coalesce(sum(distToLovi <= 20), 0),
             n_flare_10 = coalesce(sum(distToLovi <= 10), 0),
-            n_flare_5 = coalesce(sum(distToLovi <= 5), 0)) %>% 
-  rename(date = `substr(date, 1, 10)`)
+            n_flare_5 = coalesce(sum(distToLovi <= 5), 0)) %>%
+  rename(distToLovi = distToLovi_mean)
 ```
 
 

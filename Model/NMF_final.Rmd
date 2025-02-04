@@ -654,6 +654,7 @@ boxplot(component5 ~ wd, data = data_to_plot,
 fitted_5c_less_o3 <- fitted(nmf_result_5c_less_o3)
 sum(abs(normalized_matrix_less_o3-fitted_5c_less_o3))
 ```
+
 ```{r, eval=TRUE, echo = T}
 # NMF factorizes V = WH
 # Store Basis matrix (W) and Coef Matrix (H)
@@ -671,6 +672,7 @@ normalized_hourly_data_5c_less_o3 <- hourly_nona[,c('day', 'time_utc')] %>%
 
 # saveRDS(normalized_hourly_data_5c_less_o3, 
 #  'result_rfiles/normalized_hourly_data_5c_less_o3.rds')
+normalized_hourly_data_5c_less_o3 <- readRDS('result_rfiles/normalized_hourly_data_5c_less_o3.rds')
 ```
 
 - make daily dataset for VNF analysis 
