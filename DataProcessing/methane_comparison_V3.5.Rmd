@@ -158,6 +158,8 @@ for (r in radius) {
 }
 
 knitr::kable(corr_result %>% arrange(trailer_compound, radius), digits = 2, col.names = c("Buffer", "Compound", "Flare Count", "Correlation Day", "Correlation Night"), align="c")
+
+saveRDS(vnf_trailer_full, 'vnf_trailer.rds')
 ```
 
 ```{r}
