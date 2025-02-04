@@ -169,6 +169,12 @@ normalized_daily_data_5c_less_o3 <-
 # Since it filtered for complete rows on a larger group.
 vnf_trailer_full <- vnf_trailer_full %>%
   left_join(normalized_daily_data_5c_less_o3, join_by(date == day))
+
+nmf_join_vnf_trailer <- normalized_daily_data_5c_less_o3 %>%
+  left_join(vnf_trailer_full, join_by(day == date))
+
+saveRDS(vnf_trailer_full, 'vnf_trailer_join_nmf.rds')
+saveRDS(nmf_join_vnf_trailer, 'nmf_join_vnf_trailer.rds')
 ```
 
 ```{r}
