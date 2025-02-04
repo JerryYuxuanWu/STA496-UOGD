@@ -19,13 +19,13 @@ hourly_data <- readRDS("../DataProcessing/Trailer_hourly_merge_20240905.rds")
 # Time series for ozone
 ```{r}
 hourly_ozone <- hourly_data %>%
+  arrange(time_utc) %>%
   mutate(o3_8h = rollmean(.$o3,
                                 k = 8,
                                 fill = NA,
                                 align = "center")) %>%
   select(day, time_utc, o3, o3_8h) %>%
   filter(!is.na(o3_8h))
-
 
 hourly_ozone %>%
   ggplot(aes(x = time_utc, group = 1)) + 
@@ -35,6 +35,8 @@ hourly_ozone %>%
   theme_minimal() +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   labs(title = '8-hour rolling mean of Ozone', x = 'Time', y = 'Ozone')
+
+sum(hourly_ozone$o3_8h > 70.1)
 ```
 
 

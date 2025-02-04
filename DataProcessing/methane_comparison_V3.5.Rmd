@@ -176,8 +176,8 @@ vnf_trailer_full <- vnf_trailer_full %>%
 nmf_join_vnf_trailer <- normalized_daily_data_5c_less_o3 %>%
   left_join(vnf_trailer_full, join_by(day == date))
 
-saveRDS(vnf_trailer_full, 'vnf_trailer_join_nmf.rds')
-saveRDS(nmf_join_vnf_trailer, 'nmf_join_vnf_trailer.rds')
+# saveRDS(vnf_trailer_full, 'vnf_trailer_join_nmf.rds')
+# saveRDS(nmf_join_vnf_trailer, 'nmf_join_vnf_trailer.rds')
 ```
 
 ```{r}
