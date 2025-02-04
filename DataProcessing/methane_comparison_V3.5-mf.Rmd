@@ -32,8 +32,7 @@ trailer_comps_wind <- Trailer %>% select(time_utc, ch4, co, co2_ppm, nox, benzen
 # 
 # vnf <- vnf %>% 
 #   mutate(across(where(is.numeric),  ~ na_if(.x, 999999))) %>% # replace 999999 as missing
-#   filter(!(is.na(temp_bb) | is.na(methane_eq))) 
-# keep those not missing temperature or methane_eq
+#   filter(!(is.na(temp_bb) | is.na(methane_eq))) # keep those not missing temperature
 # 
 # vnf <- vnf %>%
 #   filter(temp_bb >= 1600)
@@ -227,6 +226,46 @@ for (trailer_compound in response) {
     print(summary(get(paste0(trailer_compound, '_count_', distance, 'km'))))
   }
 }
+```
+
+```{r}
+
+# Variables for the model
+response <- c('Factor1','Factor2','Factor3','Factor4','Factor5')
+predictors_fixed <- c('wdr_deg', 'wsp_ms', 'monthly_oil')
+predictors_dist_var <- c('inv_dist')
+
+
+create_models <- function(data, response, predictors_fixed, predictors_dist_var) {
+  
+  # Initialize an empty list to store models
+  models <- list()
+  
+  # Iterate through each response variable
+  for (resp in response) {
+    
+    # Create the formula for the linear model
+    formula_str <- paste(resp, "~", paste(c(predictors_fixed, predictors_dist_var), collapse = " + "))
+    formula <- as.formula(formula_str)
+    
+    # Fit the linear regression model
+    model <- lm(formula, data = data)
+    
+    # Store the model in the list with the response name as key
+    models[[resp]] <- model
+  }
+  
+  return(models)
+}
+
+# Example usage:
+models <- create_models(vnf_trailer_full, response, predictors_fixed, predictors_dist_var)
+summary(models[['Factor1']])
+summary(models[['Factor2']])
+summary(models[['Factor3']])
+summary(models[['Factor4']])
+summary(models[['Factor5']])
+
 ```
 
 
