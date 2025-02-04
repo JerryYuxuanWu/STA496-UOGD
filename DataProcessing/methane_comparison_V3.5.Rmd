@@ -48,6 +48,7 @@ loving_lonlat <- c(-104.1089, 32.2961)
 #   mutate(distToLovi = mapply(distance_km_lov, lon, lat))
 # 
 # saveRDS(vnf, 'vnf_cleaned_20230501-20240601.rds')
+
 vnf <- readRDS('vnf_cleaned_20230501-20240601.rds')
 ```
 

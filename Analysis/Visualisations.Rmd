@@ -8,6 +8,7 @@ date: "2024-11-08"
 knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(zoo)
+library(htmlwidgets)
 ```
 
 # Load in merged data
@@ -48,4 +49,46 @@ for (i in 1:length(radio)){
   }
 }
 ```
+
+# DJB Well map
+```{r}
+wells_djb <- read_csv('../data/DJB well Well Headers.CSV')
+  
+cleaned_wells_djb <- wells_djb %>%
+  dplyr::select(api = API14, drill_type = `Drill Type`, spud_date = `Spud Date`, 
+                completion_date = `Completion Date`, 
+                first_prod_date = `First Prod Date`, 
+                last_prod_date = `Last Prod Date`, 
+                well_status = `Well Status`, 
+                production_type = `Production Type`,
+                uog_lon = `Surface Hole Longitude (WGS84)`, 
+                uog_lat = `Surface Hole Latitude (WGS84)`,
+                Operator.Company.Name = `Operator Company Name`)
+
+site_coords <- tibble(name = c('LUR', 'LLG', 'BRZ', 'ECC', 'BNP'),
+                      lat = c(40.1762235, 40.1607039, 40.0699783, 40.0402277, 39.9814076),
+                      lon = c(-105.0476608, -105.1461437, -105.2202754, -105.0520854, -105.0064873))
+# Wells map
+map <- leaflet() %>%
+        addTiles() %>% 
+        addProviderTiles("Esri.WorldImagery") %>% 
+        addProviderTiles("CartoDB.PositronOnlyLabels") %>%  
+        addCircleMarkers(data = cleaned_wells_djb, lng=~uog_lon, lat=~uog_lat, 
+                         fillOpacity = 0.9, radius = 2, weight = 1, color="cyan") %>%
+        addCircleMarkers(data = site_coords, lng=~lon, lat=~lat, radius=10,color="yellow", 
+                         fillColor = "yellow", fillOpacity = 1,
+                         label = ~name, 
+                         labelOptions = 
+                           labelOptions(noHide = TRUE, direction = 'bottom', offset = c(0, 8),
+                                        style = list(
+                                                     "color" = "black",
+                                                     "font-family" = "serif",
+                                                     "font-size" = "14px"
+                                                    )))%>%
+        addScaleBar("bottomright")
+
+saveWidget(map, file="djb_map.html")
+```
+
+
 
