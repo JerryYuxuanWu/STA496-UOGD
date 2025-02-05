@@ -46,7 +46,7 @@ trailer_daily <- trailer_hourly_clean %>%
 
 # Compute average measurement from 6pm to 6am
 trailer_night_avg <- trailer_hourly_clean %>% 
-  filter(hour(ymd_hms(time_utc)) <= 6) %>%
+  filter(hour(ymd_hms(datetime_mountain)) <= 6) %>%
   select(-c(time_utc, day_utc, datetime_utc, datetime_mountain)) %>% 
   group_by(day_mountain) %>% 
   summarise(across(everything(), ~mean(.x, na.rm=T))) %>%
@@ -139,17 +139,32 @@ flaring_loving_50$angle <- angles
 
 ## NMF data
 ```{r}
-nmf_data <- readRDS('result_rfiles/normalized_daily_data_5c_less_o3.rds')
+nmf_data <- readRDS('result_rfiles/normalized_hourly_data_5c_less_o3.rds')
 names(nmf_data)
 ```
 ```{r}
-nmf_factor <- nmf_data %>%
-  select(day, Factor1, Factor2, Factor3, Factor4, Factor5) %>%
-  mutate(datetime_mountain = with_tz(as.POSIXct(day, tz = 'UTC', format = "%Y-%m-%d"), 
+nmf_factor_hourly <- nmf_data %>%
+  select(time_utc, Factor1, Factor2, Factor3, Factor4, Factor5) %>%
+  mutate(datetime_mountain = with_tz(as.POSIXct(time_utc, tz = 'UTC', format = "%Y-%m-%d %H:%M:%OS"), 
                                      tzone = "America/Denver")) %>%
   mutate(day_mountain = as.Date(format(datetime_mountain, '%Y-%m-%d'))) %>%
-  select(-day, -datetime_mountain)
+  select(-time_utc) %>%
+  filter(if_all(everything(), ~!is.na(.)))
 ```
+
+```{r}
+nmf_factor_day <- nmf_factor_hourly %>% 
+  select(-datetime_mountain) %>%
+  group_by(day_mountain) %>% 
+  summarise(across(everything(), ~mean(.x, na.rm=T))) 
+
+nmf_factor_night <- nmf_factor_hourly %>% 
+  filter(hour(ymd_hms(datetime_mountain)) <= 6) %>%
+  group_by(day_mountain) %>% 
+  summarise(across(everything(), ~mean(.x, na.rm=T))) %>%
+  select(-datetime_mountain)
+```
+
 
 # Full
 ```{r}
@@ -161,7 +176,9 @@ full_merged <- trailer_daily %>%
   left_join(flaring_daily, join_by(day_mountain==date)) %>%
   mutate(yearmonth = format(day_mountain, '%Y-%m')) %>%
   left_join(wells_monthly, join_by(yearmonth == Month)) %>%
-  left_join(nmf_factor, join_by(day_mountain))
+  left_join(nmf_factor_day, join_by(day_mountain)) %>%
+  left_join(nmf_factor_night, join_by(day_mountain), 
+              suffix = c('.day', '.night'))
 
 # Add the flare downwind variables.
 for (r in radius) {
@@ -202,5 +219,55 @@ cat(sapply(radius, function(x) sum(full_merged[paste0('n_flare_', x)] > 0, na.rm
 - From here, use `full_merged` for models.
 ```{r}
 names(full_merged)
+```
+
+```{r}
+# Variables for the model
+response <- c('ch4', 'benzene', 'co', 'co2', 'nox', 'ethane', 'ethene', 
+              'Factor1', 'Factor2', 'Factor3', 'Factor4', 'Factor5')
+predictors_fixed <- c('wdr_deg.night', 'wsp_ms.night', 'weighted_monthly_oil', 
+                      'weighted_monthly_gas')
+
+# Can also add 'flare_wd_night' to the vector below
+predictors_dist_var <- c('n_flare')
+distances <- c(5,10,20,30,50)
+
+# Tibble to store the result
+compound_flare_lm_result <- tibble(Compound = character(),
+                                   Radius = numeric(),
+                                   'Adj R-sq' = numeric(),
+                                   'df' = numeric())
+for (trailer_compound in response) {
+  for (distance in distances) {
+    predictors_dist_var_temp <- paste0(predictors_dist_var, paste0('_', distance))
+    formula_feature_str <- paste(c(predictors_fixed, predictors_dist_var_temp), collapse = ' + ')
+    formula_str <- paste(paste0(trailer_compound, '.night'), formula_feature_str, sep = ' ~ ')
+    formula <- as.formula(formula_str)
+    
+    model <- lm(formula, data = full_merged)
+    assign(paste0(trailer_compound, '_count_', distance, 'km'), model)
+    summary <- summary(model)
+    
+    compound_flare_lm_result <- compound_flare_lm_result %>%
+      add_row(Compound = trailer_compound,
+              Radius = distance,
+              'Adj R-sq' = round(summary$adj.r.squared,2),
+              'df' = summary$df[2])
+  }
+}
+compound_flare_lm_result
+```
+```{r}
+
+```
+
+```{r}
+# Look at the models specifically
+for (trailer_compound in response) {
+  for (distance in distances) {
+    cat('--------------Compound: ', toupper(trailer_compound), ', Radius: ', distance, '---------------', sep = '')
+    print(summary(get(paste0(trailer_compound, '_count_', distance, 'km'))))
+  }
+}
 ```
 
