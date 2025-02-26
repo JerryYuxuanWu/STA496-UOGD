@@ -211,7 +211,6 @@ adjusting_neg_bg_from_lod <- function(chemical, LOD, background, hourly_data){
 - merge background and LOD
 
 ```{r}
-
 background_lod_non_voc <- tibble(chemical = non_vocs,
                                  LOD = LOD_non_voc,
                                  background = unname(background_levels[non_vocs]))
@@ -579,6 +578,29 @@ grid.arrange(nmfplt_1_lsnmf_random_less_o3_5c, nmfplt_2_lsnmf_random_less_o3_5c,
 # )
 # lsnmf_nndsvd_less_o3_test@.Data
 # Each of the 5 models are obviously identical as we're using nndsvd without randomization.
+```
+
+```{r, echo = FALSE, eval = FALSE}
+# Test chunk 2
+lsnmf_nndsvd_less_o3_test2a <- nmf(
+  normalized_matrix_less_o3,
+  rank = 5,
+  method = "ls-nmf",
+  weight = weight_matrix,
+  nrun = 1,
+  seed = 'nndsvd'
+)
+
+lsnmf_nndsvd_less_o3_test2b <- nmf(
+  normalized_matrix_less_o3,
+  rank = 5,
+  method = "ls-nmf",
+  weight = 1/weight_matrix,
+  nrun = 1,
+  seed = 'nndsvd'
+)
+lsnmf_nndsvd_less_o3_test2a
+lsnmf_nndsvd_less_o3_test2b
 ```
 
 ```{r, warning = FALSE}
