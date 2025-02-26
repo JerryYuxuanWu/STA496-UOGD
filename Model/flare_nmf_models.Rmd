@@ -99,6 +99,16 @@ flaring_loving_50 <- flaring_loving_50 %>%
 flaring_loving_50
 ```
 
+### Try to merge V3.5
+```{r}
+vnf_v35 <- readRDS('../DataProcessing/vnf_cleaned_20230501-20240601.rds')
+flaring_loving_50 <- vnf_v35 %>%
+  select(all_of(c('date', 'temp_bb', 'area_bb', 'v35_methane_eq' = 'methane_eq', 'lon', 'lat'))) %>%
+  right_join(flaring_loving_50, join_by(date, temp_bb, area_bb, lon, lat)) %>%
+  arrange(date)
+```
+
+### Get daily flare data
 ```{r}
 # summarize a daily count flaring
 flaring_daily <- flaring_loving_50 %>% 
@@ -116,7 +126,8 @@ flaring_daily <- flaring_loving_50 %>%
             n_flare_30 = coalesce(sum(distToLovi_flare <= 30), 0),
             n_flare_20 = coalesce(sum(distToLovi_flare <= 20), 0),
             n_flare_10 = coalesce(sum(distToLovi_flare <= 10), 0),
-            n_flare_5 = coalesce(sum(distToLovi_flare <= 5), 0)) %>%
+            n_flare_5 = coalesce(sum(distToLovi_flare <= 5), 0),
+            V35_methane_eq = mean(v35_methane_eq, na.rm=T)) %>%
   rename(distToLovi_flare = distToLovi_flare_mean)
 ```
 
@@ -185,7 +196,7 @@ for (r in radius) {
   temp <- flaring_loving_50 %>%
     filter(distToLovi_flare <= r)
     
-  new_colnames <- paste0(c('flare_wd_day_', 'flare_wd_night_'), r)
+  new_colnames <- paste0(c('flare_wd_day_', 'flare_wd_night_', 'methane_eq_'), r)
   
   flare_is_from_wd <- temp %>% 
     left_join(trailer_daily, join_by(date==day_mountain)) %>%
@@ -193,8 +204,9 @@ for (r in radius) {
               suffix = c('.day', '.night')) %>%
   group_by(date) %>%
   summarise(flare_wd_day = sum(abs(angle - wdr_deg.day) <= 30, na.rm=T),
-            flare_wd_night = sum(abs(angle - wdr_deg.night) <= 30, na.rm=T)) %>%
-  rename(setNames(c('flare_wd_day', 'flare_wd_night'), new_colnames))
+            flare_wd_night = sum(abs(angle - wdr_deg.night) <= 30, na.rm=T),
+            methane_eq = mean(-7.15+1.08*10^-2*temp_bb-5.31*10^-6*temp_bb^2+8.66*10^-10*temp_bb^3+1.2^10^-2*area_bb)) %>%
+  rename(setNames(c('flare_wd_day', 'flare_wd_night', 'methane_eq'), new_colnames))
   
   full_merged <- full_merged %>%
     left_join(flare_is_from_wd, join_by(day_mountain==date)) %>%
