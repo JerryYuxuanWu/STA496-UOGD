@@ -269,29 +269,8 @@ hourly_nona_bgrm <- hourly_nona_bgrm %>%
 # look at zero values
 colSums(hourly_nona_bgrm == 0)
 ```
-
-- STEP 3: replace zero values with random values between 0 and 0.5xLOD
-
-```{r}
-
-set.seed(123)
-replace_zero_with_random <- function(column, name, LOD_df){
-  LOD <- LOD_df$LOD[LOD_df$chemical == name]
-  column <- if_else(column == 0, round(runif(length(column), 0, 0.5 * LOD), 3), column)
-  return (column)
-}
-
-hourly_nona_bgrm_zerorepl <- hourly_nona_bgrm %>%
-  mutate(across(adjusted_background_non_voc$chemical, 
-                ~ replace_zero_with_random(.x, cur_column(), adjusted_background_non_voc)))
-
-hourly_nona_bgrm_zerorepl <- hourly_nona_bgrm_zerorepl %>%
-  mutate(across(adjusted_background_voc$chemical, 
-                ~ replace_zero_with_random(.x, cur_column(), adjusted_background_voc)))
-```
-
-
-- STEP 4: Normalize the non-vocs
+- Normalize then replace zero
+- STEP 3: Normalize the non-vocs
 
 ```{r}
 #normalizing function
@@ -302,22 +281,90 @@ normalize_column <- function(column){
 }
 ```
 
-- STEP 4: Normalize all
+- STEP 3: Normalize all
 
 ```{r}
 # normalize all
-hourly_nona_bgrm_zerorepl_norm <- as_tibble(sapply(as.list(hourly_nona_bgrm_zerorepl), 
+hourly_nona_bgrm_norm <- as_tibble(sapply(as.list(hourly_nona_bgrm), 
                                                    normalize_column)) 
 #normalize the NON_VOC
-summary(hourly_nona_bgrm_zerorepl_norm)
+summary(hourly_nona_bgrm_norm)
+```
+
+- STEP 4: replace zero values with random values between 0 and 0.5xLOD
+
+```{r}
+set.seed(123)
+replace_zero_with_random <- function(column, name, LOD_df){
+  LOD <- LOD_df$LOD[LOD_df$chemical == name]
+  column <- if_else(column == 0, round(runif(length(column), 0.001, 0.5 * LOD), 3), column)
+  return (column)
+}
+
+hourly_nona_bgrm_norm_zerorepl <- hourly_nona_bgrm_norm %>%
+  mutate(across(adjusted_background_non_voc$chemical, 
+                ~ replace_zero_with_random(.x, cur_column(), adjusted_background_non_voc)))
+
+hourly_nona_bgrm_norm_zerorepl <- hourly_nona_bgrm_norm_zerorepl %>%
+  mutate(across(adjusted_background_voc$chemical, 
+                ~ replace_zero_with_random(.x, cur_column(), adjusted_background_voc)))
 ```
 
 - FINAL step: create matrix of processed and normalized concentrations for NMF
 
 ```{r}
-normalized_matrix <- as.matrix(hourly_nona_bgrm_zerorepl_norm) 
+normalized_matrix <- as.matrix(hourly_nona_bgrm_norm_zerorepl) 
 #important: using the normalized VOCs for this file
 ```
+
+<!-- - STEP 3: replace zero values with random values between 0 and 0.5xLOD -->
+
+<!-- ```{r} -->
+
+<!-- set.seed(123) -->
+<!-- replace_zero_with_random <- function(column, name, LOD_df){ -->
+<!--   LOD <- LOD_df$LOD[LOD_df$chemical == name] -->
+<!--   column <- if_else(column == 0, round(runif(length(column), 0, 0.5 * LOD), 3), column) -->
+<!--   return (column) -->
+<!-- } -->
+
+<!-- hourly_nona_bgrm_zerorepl <- hourly_nona_bgrm %>% -->
+<!--   mutate(across(adjusted_background_non_voc$chemical,  -->
+<!--                 ~ replace_zero_with_random(.x, cur_column(), adjusted_background_non_voc))) -->
+
+<!-- hourly_nona_bgrm_zerorepl <- hourly_nona_bgrm_zerorepl %>% -->
+<!--   mutate(across(adjusted_background_voc$chemical,  -->
+<!--                 ~ replace_zero_with_random(.x, cur_column(), adjusted_background_voc))) -->
+<!-- ``` -->
+
+
+<!-- - STEP 4: Normalize the non-vocs -->
+
+<!-- ```{r} -->
+<!-- #normalizing function -->
+<!-- normalize_column <- function(column){ -->
+<!--   background <- quantile(column, 0) -->
+<!--   max <- quantile(column, 1) # this could be adjusted -->
+<!--   return ((column - background)/(max - background)) -->
+<!-- } -->
+<!-- ``` -->
+
+<!-- - STEP 4: Normalize all -->
+
+<!-- ```{r} -->
+<!-- # normalize all -->
+<!-- hourly_nona_bgrm_zerorepl_norm <- as_tibble(sapply(as.list(hourly_nona_bgrm_zerorepl),  -->
+<!--                                                    normalize_column))  -->
+<!-- #normalize the NON_VOC -->
+<!-- summary(hourly_nona_bgrm_zerorepl_norm) -->
+<!-- ``` -->
+
+<!-- - FINAL step: create matrix of processed and normalized concentrations for NMF -->
+
+<!-- ```{r} -->
+<!-- normalized_matrix <- as.matrix(hourly_nona_bgrm_zerorepl_norm)  -->
+<!-- #important: using the normalized VOCs for this file -->
+<!-- ``` -->
 
 # NMF section
 ## Preprocess
@@ -333,10 +380,10 @@ normalized_matrix_less_o3 <- normalized_matrix[ ,setdiff(colnames(normalized_mat
 
 ### Compute error matrix
 ```{r}
-# compute weight matrix (uncertainties or error)
+# compute uncertainty matrix (inverse of weight?)
 # Based on the Guha paper
 
-weight_matrix <- matrix(0, nrow = nrow(normalized_matrix_less_o3), 
+uncertainty_matrix <- matrix(0, nrow = nrow(normalized_matrix_less_o3), 
                         ncol = ncol(normalized_matrix_less_o3))
 LOD_merged <- tibble(chemical = c(adjusted_background_non_voc$chemical, 
                                   adjusted_background_voc$chemical),
@@ -348,28 +395,30 @@ LOD_merged <- tibble(chemical = names(hourly_nona_bgrm_zerorepl_norm)) %>%
   filter(chemical %in% colnames(normalized_matrix_less_o3))
 
 # creating uncertainty Matrix
-for (i in 1:dim(weight_matrix)[1]) { 
-  for (j in 1:dim(weight_matrix)[2]) {
+for (i in 1:dim(uncertainty_matrix)[1]) { 
+  for (j in 1:dim(uncertainty_matrix)[2]) {
     chemical <- colnames(normalized_matrix_less_o3)[j]
     xij <- normalized_matrix_less_o3[i, j]
     LOD <- LOD_merged$LOD[LOD_merged$chemical == chemical]
     # Get LOD value for this row 
     if (j == 1) { 
       # based on equation 6, we sqrt ch4 (at column = 1) and times by 1
-      weight_matrix[i, j] <- sqrt(xij)
+      uncertainty_matrix[i, j] <- sqrt(xij)
     } else if (j == 2) {
       # 0.25 for co2 
-      weight_matrix[i, j] <- 0.25 * sqrt(xij)
+      uncertainty_matrix[i, j] <- 0.25 * sqrt(xij)
     } else if (j == 3) { 
       # 0.5 for CO
-      weight_matrix[i, j] <- 0.5 * sqrt(xij)
+      uncertainty_matrix[i, j] <- 0.5 * sqrt(xij)
     } else if (xij <= LOD) {
-      weight_matrix[i, j] <- 2 * LOD # equation 5a) in reference paper
+      uncertainty_matrix[i, j] <- 2 * LOD # equation 5a) in reference paper
     } else {
-      weight_matrix[i, j] <- sqrt(((0.1 * xij)**2 + LOD**2))  #equation 5c) in reference paper
+      uncertainty_matrix[i, j] <- sqrt(((0.1 * xij)**2 + LOD**2))  #equation 5c) in reference paper
     }
   }
 }
+
+weight_matrix <- 1/uncertainty_matrix 
 ```
 
 ### Helper for source contributions plots
