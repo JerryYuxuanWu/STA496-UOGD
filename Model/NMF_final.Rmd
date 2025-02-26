@@ -10,6 +10,7 @@ output:
 # load the packages
 library(NMF)
 library(tidyverse)
+library(grid)
 library(gridExtra)
 library(readxl)
 library(circular)
@@ -66,7 +67,8 @@ hourly_dates <- hourly_nona %>%
 ## Data visualisation
 
 - Boxplots of the hourly concentrations non-voc
-```{r, echo = FALSE}
+
+```{r, echo = FALSE, out.width="70%"}
 non_vocs <- c('ch4', 'co2', 'co', 'h2s', 'so2', 'nox', 'o3')
 for (compound in non_vocs) {
   assign(paste0(compound, '_boxplot'), 
@@ -80,13 +82,14 @@ grid.arrange(ch4_boxplot, co2_boxplot, co_boxplot, nrow = 3)
 ```
 
 - Boxplots sulfur compounds, NOx, ozone
-```{r, echo = FALSE}
+
+```{r, echo = FALSE, out.width="70%"}
 grid.arrange(h2s_boxplot, so2_boxplot, nox_boxplot, o3_boxplot, nrow = 4)
 ```
 
 - Boxplots VOCs
 
-```{r, echo = FALSE}
+```{r, echo = FALSE, out.width="70%"}
 for (compound in vocs) {
   assign(paste0(compound, '_boxplot'), 
          ggplot(hourly_vocs) +
@@ -98,22 +101,22 @@ grid.arrange(get(paste0(vocs[1], '_boxplot')), get(paste0(vocs[2], '_boxplot')),
              get(paste0(vocs[3], '_boxplot')), get(paste0(vocs[4], '_boxplot')), nrow = 4)
 ```
 
-```{r, echo = FALSE}
+```{r, echo = FALSE, out.width="70%"}
 grid.arrange(get(paste0(vocs[5], '_boxplot')), get(paste0(vocs[6], '_boxplot')), 
              get(paste0(vocs[7], '_boxplot')), get(paste0(vocs[8], '_boxplot')), nrow = 4)
 ```
 
-```{r, echo = FALSE}
+```{r, echo = FALSE, out.width="70%"}
 grid.arrange(get(paste0(vocs[9], '_boxplot')), get(paste0(vocs[10], '_boxplot')), 
              get(paste0(vocs[11], '_boxplot')), get(paste0(vocs[12], '_boxplot')), nrow = 4)
 ```
 
-```{r, echo = FALSE}
+```{r, echo = FALSE, out.width="70%"}
 grid.arrange(get(paste0(vocs[13], '_boxplot')), get(paste0(vocs[14], '_boxplot')), 
              get(paste0(vocs[15], '_boxplot')), get(paste0(vocs[16], '_boxplot')), nrow = 4)
 ```
 
-```{r, echo = FALSE}
+```{r, echo = FALSE, out.width="70%"}
 grid.arrange(get(paste0(vocs[17], '_boxplot')), get(paste0(vocs[18], '_boxplot')), 
              get(paste0(vocs[19], '_boxplot')), get(paste0(vocs[20], '_boxplot')), nrow = 4)
 ```
@@ -316,7 +319,58 @@ normalized_matrix <- as.matrix(hourly_nona_bgrm_zerorepl_norm)
 #important: using the normalized VOCs for this file
 ```
 
-## NMF section
+# NMF section
+## Preprocess
+### Global variables
+```{r}
+components <- 4:10
+```
+
+### Remove Ozone
+```{r}
+normalized_matrix_less_o3 <- normalized_matrix[ ,setdiff(colnames(normalized_matrix), "o3")]
+```
+
+### Compute error matrix
+```{r}
+# compute weight matrix (uncertainties or error)
+# Based on the Guha paper
+
+weight_matrix <- matrix(0, nrow = nrow(normalized_matrix_less_o3), 
+                        ncol = ncol(normalized_matrix_less_o3))
+LOD_merged <- tibble(chemical = c(adjusted_background_non_voc$chemical, 
+                                  adjusted_background_voc$chemical),
+                     LOD = c(adjusted_background_non_voc$LOD, 
+                             adjusted_background_voc$LOD))
+
+LOD_merged <- tibble(chemical = names(hourly_nona_bgrm_zerorepl_norm)) %>%
+  left_join(LOD_merged) %>%
+  filter(chemical %in% colnames(normalized_matrix_less_o3))
+
+# creating uncertainty Matrix
+for (i in 1:dim(weight_matrix)[1]) { 
+  for (j in 1:dim(weight_matrix)[2]) {
+    chemical <- colnames(normalized_matrix_less_o3)[j]
+    xij <- normalized_matrix_less_o3[i, j]
+    LOD <- LOD_merged$LOD[LOD_merged$chemical == chemical]
+    # Get LOD value for this row 
+    if (j == 1) { 
+      # based on equation 6, we sqrt ch4 (at column = 1) and times by 1
+      weight_matrix[i, j] <- sqrt(xij)
+    } else if (j == 2) {
+      # 0.25 for co2 
+      weight_matrix[i, j] <- 0.25 * sqrt(xij)
+    } else if (j == 3) { 
+      # 0.5 for CO
+      weight_matrix[i, j] <- 0.5 * sqrt(xij)
+    } else if (xij <= LOD) {
+      weight_matrix[i, j] <- 2 * LOD # equation 5a) in reference paper
+    } else {
+      weight_matrix[i, j] <- sqrt(((0.1 * xij)**2 + LOD**2))  #equation 5c) in reference paper
+    }
+  }
+}
+```
 
 ### Helper for source contributions plots
 
@@ -378,38 +432,415 @@ get_component_plot <- function(data, component, title) {
 }
 ```
 
-### Apply NMF using 'nndsvd' seed and KL divergence
+## LS-NMF + Random seed
+```{r, echo = FALSE, eval = FALSE}
+# Test chunk
+# lsnmf_random_less_o3_test <- nmf(
+#   normalized_matrix_less_o3,
+#   rank = 4,
+#   method = "ls-nmf",
+#   weight = weight_matrix,
+#   nrun = 5,
+#   seed = 123456,
+#   .options = list('keep.all'=TRUE)
+# )
+# lsnmf_random_less_o3_test@.Data
+# So each of the 5 runs produced a different result and by default NMF finds the optimal one.
+# Optimal model is selected based on the residuals, defined as sum(((X - fitted(object)) * weight)^2)/2
+```
 
 ```{r}
-components <- 4:10
-errors <- numeric(length(components) - 4)
+# for each rank, run 30 models and find best one
+# start_time_lsnmf_rand <- Sys.time()
+# 
+# lsnmf_random_less_o3 <- nmf(
+#   normalized_matrix_less_o3,
+#   components,
+#   method = "ls-nmf",
+#   weight = weight_matrix,
+#   30,
+#   seed = 123456
+# )
+# 
+# end_time_lsnmf_rand <- Sys.time()
+# end_time_lsnmf_rand-start_time_lsnmf_rand
+# # 19.25 minutes to run the above
+# 
+# saveRDS(lsnmf_random_less_o3,
+#         'lsnmf_random_less_o3.rds')
+lsnmf_random_less_o3 <- readRDS('lsnmf_random_less_o3.rds')
+```
+
+```{r}
+# plots the NMF rank survey
+plot(lsnmf_random_less_o3)
+```
+
+### Look at 5 factors:
+```{r}
+output <- lsnmf_random_less_o3$fit$`5`
+W <- basis(output)
+H <- coef(output)
+```
+
+```{r}
+# Convert H to a data frame for ggplot
+H_df_5c_less_o3 <- as.data.frame(H)
+# Add a column for chemicals
+H_df_5c_less_o3$Component <- rownames(H_df_5c_less_o3)
+
+# Reshape data to long format
+H_long_5c_less_o3 <- pivot_longer(H_df_5c_less_o3, cols = -Component, 
+                                  names_to = "Chemical", values_to = "Contribution")
+
+# Plot
+nmfplt_1_lsnmf_random_less_o3_5c <- get_component_plot(H_long_5c_less_o3, 
+                                           '1', '1)')
+nmfplt_2_lsnmf_random_less_o3_5c <- get_component_plot(H_long_5c_less_o3, 
+                                           '2', '2)')
+nmfplt_3_lsnmf_random_less_o3_5c <- get_component_plot(H_long_5c_less_o3, 
+                                           '3', '3)')
+nmfplt_4_lsnmf_random_less_o3_5c <- get_component_plot(H_long_5c_less_o3, 
+                                           '4', '4)')
+nmfplt_5_lsnmf_random_less_o3_5c <- get_component_plot(H_long_5c_less_o3, 
+                                           '5', '5)')
+```
+
+
+```{r, eval=TRUE, echo = FALSE, fig.height=15, fig.width=16}
+grid.arrange(nmfplt_1_lsnmf_random_less_o3_5c, nmfplt_2_lsnmf_random_less_o3_5c, 
+             nmfplt_3_lsnmf_random_less_o3_5c, nmfplt_4_lsnmf_random_less_o3_5c, 
+             nmfplt_5_lsnmf_random_less_o3_5c, 
+             ncol=2, top = textGrob("LS-NMF Random Seed",gp=gpar(fontsize=20,font=3)))
+#ggsave("factors.png", p)
+```
+
+## LS-NMF + nndsvd seed
+
+```{r, echo = FALSE, eval = FALSE}
+# Test chunk
+# lsnmf_nndsvd_less_o3_test <- nmf(
+#   normalized_matrix_less_o3,
+#   rank = 4,
+#   method = "ls-nmf",
+#   weight = weight_matrix,
+#   nrun = 5,
+#   seed = 'nndsvd',
+#   .options = list('keep.all'=TRUE)
+# )
+# lsnmf_nndsvd_less_o3_test@.Data
+# Each of the 5 models are obviously identical as we're using nndsvd without randomization.
+```
+
+```{r, warning = FALSE}
+#function below used to estimate the optimal rank and will be used in the nmf() function.
+
+# start_time_lsnmf_nndsvd <- Sys.time()
+# 
+# lsnmf_nndsvd_less_o3 <- nmf(
+#   normalized_matrix_less_o3,
+#   rank = components,
+#   nrun = 1, # since using nndsvd
+#   method = "ls-nmf",
+#   weight = weight_matrix,
+#   seed = 'nndsvd'
+# )
+# 
+# end_time_lsnmf_nndsvd <- Sys.time()
+# end_time_lsnmf_nndsvd-start_time_lsnmf_nndsvd
+# # 1.34 minutes to run the above
+# 
+# saveRDS(lsnmf_nndsvd_less_o3,
+#         'lsnmf_nndsvd_less_o3.rds')
+lsnmf_nndsvd_less_o3 <- readRDS('lsnmf_nndsvd_less_o3.rds')
+```
+
+```{r}
+# plots the NMF rank survey
+plot(lsnmf_nndsvd_less_o3)
+```
+
+### Look at 5 factors:
+```{r}
+output <- lsnmf_nndsvd_less_o3$fit$`5`
+W <- basis(output)
+H <- coef(output)
+```
+
+```{r}
+# Convert H to a data frame for ggplot
+H_df_5c_less_o3 <- as.data.frame(H)
+# Add a column for chemicals
+H_df_5c_less_o3$Component <- rownames(H_df_5c_less_o3)
+
+# Reshape data to long format
+H_long_5c_less_o3 <- pivot_longer(H_df_5c_less_o3, cols = -Component, 
+                                  names_to = "Chemical", values_to = "Contribution")
+
+# Plot
+nmfplt_1_lsnmf_nndsvd_less_o3_5c <- get_component_plot(H_long_5c_less_o3, 
+                                           '1', '1)')
+nmfplt_2_lsnmf_nndsvd_less_o3_5c <- get_component_plot(H_long_5c_less_o3, 
+                                           '2', '2)')
+nmfplt_3_lsnmf_nndsvd_less_o3_5c <- get_component_plot(H_long_5c_less_o3, 
+                                           '3', '3)')
+nmfplt_4_lsnmf_nndsvd_less_o3_5c <- get_component_plot(H_long_5c_less_o3, 
+                                           '4', '4)')
+nmfplt_5_lsnmf_nndsvd_less_o3_5c <- get_component_plot(H_long_5c_less_o3, 
+                                           '5', '5)')
+```
+
+
+```{r, eval=TRUE, echo = FALSE, fig.height=15, fig.width=16}
+grid.arrange(nmfplt_1_lsnmf_nndsvd_less_o3_5c, nmfplt_2_lsnmf_nndsvd_less_o3_5c, 
+             nmfplt_3_lsnmf_nndsvd_less_o3_5c, nmfplt_4_lsnmf_nndsvd_less_o3_5c, 
+             nmfplt_5_lsnmf_nndsvd_less_o3_5c, 
+             ncol=2, top = textGrob("LS-NMF nndsvd Seed",gp=gpar(fontsize=20,font=3)))
+#ggsave("factors.png", p)
+```
+
+## Comparing random seed vs nndsvd for ls-nmf
+Residuals is defined as sum(((X - fitted(object)) * weight)^2)/2
+```{r}
+tibble(component = components,
+       random_residual = lsnmf_random_less_o3$measures$residuals,
+       nndsvd_residual = lsnmf_nndsvd_less_o3$measures$residuals) %>%
+  ggplot() +
+  geom_line(aes(x = component, y =random_residual, color = 'Random seed')) +
+  geom_point(aes(x = component, y =random_residual, color = 'Random seed')) +
+  geom_line(aes(x = component, y = nndsvd_residual, color = 'nndsvd')) +
+  geom_point(aes(x = component, y = nndsvd_residual, color = 'nndsvd')) +
+  scale_colour_manual("", 
+                    breaks = c("Random seed", "nndsvd"),
+                    values = c("tomato1", "dodgerblue")) +
+  labs(x = 'Rank', y = 'Residual') +
+  theme_bw()
+```
+
+## KL + Random seed
+
+```{r, warning = FALSE}
+# start_time_kl_random <- Sys.time()
+# 
+# kl_random_less_o3 <- nmf(
+#   normalized_matrix_less_o3,
+#   rank = components,
+#   nrun = 30,
+#   method = "KL",
+#   seed = 123456
+# )
+# 
+# end_time_kl_random <- Sys.time()
+# end_time_kl_random-start_time_kl_random
+# 14.27 minutes to run the above
+
+# saveRDS(kl_random_less_o3, 'kl_random_less_o3.rds')
+
+kl_random_less_o3 <- readRDS('kl_random_less_o3.rds')
+```
+```{r}
+# plots the NMF rank survey
+plot(kl_random_less_o3)
+```
+### Look at 5 factors:
+```{r}
+output <- kl_random_less_o3$fit$`5`
+W <- basis(output)
+H <- coef(output)
+```
+
+```{r}
+# Convert H to a data frame for ggplot
+H_df_5c_less_o3 <- as.data.frame(H)
+# Add a column for chemicals
+H_df_5c_less_o3$Component <- rownames(H_df_5c_less_o3)
+
+# Reshape data to long format
+H_long_5c_less_o3 <- pivot_longer(H_df_5c_less_o3, cols = -Component, 
+                                  names_to = "Chemical", values_to = "Contribution")
+
+# Plot
+nmfplt_1_kl_random_less_o3_5c <- get_component_plot(H_long_5c_less_o3, 
+                                           '1', '1)')
+nmfplt_2_kl_random_less_o3_5c <- get_component_plot(H_long_5c_less_o3, 
+                                           '2', '2)')
+nmfplt_3_kl_random_less_o3_5c <- get_component_plot(H_long_5c_less_o3, 
+                                           '3', '3)')
+nmfplt_4_kl_random_less_o3_5c <- get_component_plot(H_long_5c_less_o3, 
+                                           '4', '4)')
+nmfplt_5_kl_random_less_o3_5c <- get_component_plot(H_long_5c_less_o3, 
+                                           '5', '5)')
+```
+
+
+```{r, eval=TRUE, echo = FALSE, fig.height=15, fig.width=16}
+grid.arrange(nmfplt_1_kl_random_less_o3_5c, nmfplt_2_kl_random_less_o3_5c, 
+             nmfplt_3_kl_random_less_o3_5c, nmfplt_4_kl_random_less_o3_5c, 
+             nmfplt_5_kl_random_less_o3_5c, 
+             ncol=2, top = textGrob("KL Random Seed",gp=gpar(fontsize=20,font=3)))
+#ggsave("factors.png", p)
+```
+
+## KL + nndsvd
+```{r, warning = FALSE}
+# errors <- numeric(length(components) - 4)
 
 # Loop over the number of components
 # for (n in components) {
-#   nmf_result <- nmf(normalized_matrix, rank = n, method = "KL", seed='nndsvd')
+#   nmf_result <- nmf(normalized_matrix_less_o3, rank = n, method = "KL", seed='nndsvd')
 #   reconstruction <- basis(nmf_result) %*% coef(nmf_result)
-#   error <- norm(normalized_matrix - reconstruction, type = "F")
+#   error <- norm(normalized_matrix_less_o3 - reconstruction, type = "F")^2 # RSS
 #   errors[n-3] <- error
 #   print(paste0('Completed ', n - 3, ' out of 7'))
 # }
 # 
-# saveRDS(errors, 'errors_norm.rds')
+# saveRDS(errors, 'errors_KL_nndsvd_less_o3.rds')
+# 
+# errors <- readRDS('errors_KL_nndsvd_less_o3.rds')
 
-errors <- readRDS('errors_norm.rds')
+# start_time_kl_nndsvd <- Sys.time()
+# 
+# kl_nndsvd_less_o3 <- nmf(
+#   normalized_matrix_less_o3,
+#   rank = components,
+#   nrun = 1,
+#   method = "KL",
+#   seed = 'nndsvd'
+# )
+# 
+# end_time_kl_nndsvd <- Sys.time()
+# end_time_kl_nndsvd-start_time_kl_nndsvd
+# 1 minute to run the above
+
+# saveRDS(kl_nndsvd_less_o3, 'kl_nndsvd_less_o3.rds')
+
+kl_nndsvd_less_o3 <- readRDS('kl_nndsvd_less_o3.rds')
+```
+```{r}
+# plots the NMF rank survey
+plot(kl_nndsvd_less_o3)
 ```
 
+### Look at 5 factors:
+```{r}
+output <- kl_nndsvd_less_o3$fit$`5`
+W <- basis(output)
+H <- coef(output)
+```
+
+```{r}
+# Convert H to a data frame for ggplot
+H_df_5c_less_o3 <- as.data.frame(H)
+# Add a column for chemicals
+H_df_5c_less_o3$Component <- rownames(H_df_5c_less_o3)
+
+# Reshape data to long format
+H_long_5c_less_o3 <- pivot_longer(H_df_5c_less_o3, cols = -Component, 
+                                  names_to = "Chemical", values_to = "Contribution")
+
+# Plot
+nmfplt_1_kl_nndsvd_less_o3_5c <- get_component_plot(H_long_5c_less_o3, 
+                                           '1', '1)')
+nmfplt_2_kl_nndsvd_less_o3_5c <- get_component_plot(H_long_5c_less_o3, 
+                                           '2', '2)')
+nmfplt_3_kl_nndsvd_less_o3_5c <- get_component_plot(H_long_5c_less_o3, 
+                                           '3', '3)')
+nmfplt_4_kl_nndsvd_less_o3_5c <- get_component_plot(H_long_5c_less_o3, 
+                                           '4', '4)')
+nmfplt_5_kl_nndsvd_less_o3_5c <- get_component_plot(H_long_5c_less_o3, 
+                                           '5', '5)')
+```
+
+
+```{r, eval=TRUE, echo = FALSE, fig.height=15, fig.width=16}
+grid.arrange(nmfplt_1_kl_nndsvd_less_o3_5c, nmfplt_2_kl_nndsvd_less_o3_5c, 
+             nmfplt_3_kl_nndsvd_less_o3_5c, nmfplt_4_kl_nndsvd_less_o3_5c, 
+             nmfplt_5_kl_nndsvd_less_o3_5c, 
+             ncol=2, top = textGrob("KL nndsvd Seed",gp=gpar(fontsize=20,font=3)))
+```
 
 ```{r, eval=TRUE, echo = F}
 # Plot the errors
-df <- data.frame(components, errors)
-ggplot(df, aes(x = components, y = errors)) +
-  geom_line() +
-  geom_point() +
-  theme_minimal() +
-  geom_text(aes(label = sprintf("%.3f", errors)), color = "blue", size = 3, vjust = -0.5) +
-  labs(title = "NMF Reconstruction Error vs. Number of Components",
-       x = "Number of Components", y = "Reconstruction Error")
+# df <- data.frame(components, errors)
+# ggplot(df, aes(x = components, y = errors)) +
+#   geom_line() +
+#   geom_point() +
+#   theme_minimal() +
+#   geom_text(aes(label = sprintf("%.3f", errors)), color = "blue", size = 3, vjust = -0.5) +
+#   labs(title = "NMF Reconstruction Error vs. Number of Components",
+#        x = "Number of Components", y = "Reconstruction Error")
 ```
+
+## Comparing all four methods
+Using RSS, WRSS, and KL
+```{r}
+get_residual <- function(component, seed, method, objective) {
+  fitted <- fitted(get(paste(method, seed, 'less_o3', sep = '_'))$fit[[component-3]])
+  if (objective == 'wrss') {
+    return(sum(((normalized_matrix_less_o3 - fitted) * weight_matrix)^2)/2)
+  } else if (objective == 'kl') {
+    log_term <- normalized_matrix_less_o3/fitted
+    log_term[log_term<.Machine$double.eps] <- .Machine$double.eps
+    return(sum(normalized_matrix_less_o3 * log(log_term) - fitted + normalized_matrix_less_o3))
+  } else if (objective == 'rss') {
+    return(norm(normalized_matrix_less_o3 - fitted, type = 'F')^2)
+  }
+}
+
+df_plot <- expand_grid(
+  component = components,
+  seed = c('random', 'nndsvd'),
+  method = c('lsnmf', 'kl'),
+  objective = c('rss', 'wrss', 'kl')
+) %>%
+  rowwise() %>%
+  mutate(residual = get_residual(component, seed, method, objective)) %>%
+  ungroup() %>%
+  mutate(model = paste0(method, seed))
+
+RSS_plot <- df_plot %>%
+  filter(objective=='rss') %>%
+  ggplot() +
+  geom_line(aes(x = component, y = residual, group = model, color = model)) +
+  geom_point(aes(x = component, y = residual, group = model, color = model)) +
+  scale_colour_manual("", 
+                    breaks = c("lsnmfrandom", "lsnmfnndsvd",
+                               "klrandom", "klnndsvd"),
+                    values = c("tomato1", "dodgerblue",
+                               "springgreen4", "darkorange")) +
+  labs(x = 'Rank', y = 'Residual', title = 'RSS') +
+  theme_bw() +
+  theme(legend.position="none")
+
+WRSS_plot <- df_plot %>%
+  filter(objective=='wrss') %>%
+  ggplot() +
+  geom_line(aes(x = component, y = residual, group = model, color = model)) +
+  geom_point(aes(x = component, y = residual, group = model, color = model)) +
+  scale_colour_manual("", 
+                  breaks = c("lsnmfrandom", "lsnmfnndsvd",
+                             "klrandom", "klnndsvd"),
+                  values = c("tomato1", "dodgerblue",
+                             "springgreen4", "darkorange")) +
+  labs(x = 'Rank', y = '', title = 'wrss') +
+  theme_bw() +
+  theme(legend.position="none")
+
+KL_plot <- df_plot %>%
+  filter(objective=='kl') %>%
+  ggplot() +
+  geom_line(aes(x = component, y = residual, group = model, color = model)) +
+  geom_point(aes(x = component, y = residual, group = model, color = model)) +
+  scale_colour_manual("", 
+                    breaks = c("lsnmfrandom", "lsnmfnndsvd",
+                               "klrandom", "klnndsvd"),
+                    values = c("tomato1", "dodgerblue",
+                               "springgreen4", "darkorange")) +
+  labs(x = 'Rank', y = '', title = 'KL') +
+  theme_bw()
+grid.arrange(RSS_plot, WRSS_plot, KL_plot, ncol=2)
+```
+
 
 ## NMF with 5 source factors without ozone
 
@@ -420,11 +851,7 @@ ggplot(df, aes(x = components, y = errors)) +
 - Calculate variance explained by each factor
 
 ```{r, message = FALSE}
-normalized_matrix_less_o3 <- 
-  normalized_matrix[ ,setdiff(colnames(normalized_matrix), "o3")]
-
-nmf_result_5c_less_o3 <- nmf(normalized_matrix_less_o3, rank = 5, 
-                             method = "KL", seed='nndsvd')
+nmf_result_5c_less_o3 <- kl_nndsvd_less_o3$fit$`5`
 
 basis_matrix_5c_less_o3 <- basis(nmf_result_5c_less_o3) #W
 coef_matrix_5c_less_o3 <- coef(nmf_result_5c_less_o3) #H
@@ -507,20 +934,41 @@ custom_colors <- c("Traffic" = "#00AFBB",
 contrib_prop <- apply(H_df_5c_less_o3[,1:(length(H_df_5c_less_o3)-1)], MARGIN = 2, 
                       FUN = function(x) {x/sum(x)})
 
-contrib_prop %>% 
+contrib_prop %>%
   as_tibble() %>%
-  mutate(Component = c('Traffic', 'Combustion', 'Oil & Gas Emissions', 'Flare (factor 4)', 'Flare (factor 5)')) %>%
-  mutate(Component = factor(Component, levels = c('Traffic', 'Combustion', 'Oil & Gas Emissions', 'Flare (factor 4)', 'Flare (factor 5)'))) %>%
-  pivot_longer(cols = -Component, names_to = "Chemical", values_to = "Contribution_prop") %>%
+  mutate(
+    Component = c(
+      'Traffic',
+      'Combustion',
+      'Oil & Gas Emissions',
+      'Flare (factor 4)',
+      'Flare (factor 5)'
+    )
+  ) %>%
+  mutate(Component = factor(
+    Component,
+    levels = c(
+      'Traffic',
+      'Combustion',
+      'Oil & Gas Emissions',
+      'Flare (factor 4)',
+      'Flare (factor 5)'
+    )
+  )) %>%
+  pivot_longer(cols = -Component,
+               names_to = "Chemical",
+               values_to = "Contribution_prop") %>%
   mutate(Chemical = factor(Chemical, levels = desired_order)) %>%
-  ggplot(aes(fill = Component, y = Contribution_prop, x = Chemical)) + 
+  ggplot(aes(fill = Component, y = Contribution_prop, x = Chemical)) +
   geom_bar(position = "fill", stat = "identity") +
-  scale_fill_manual(values = custom_colors) +  
+  scale_fill_manual(values = custom_colors) +
   theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
   labs(x = "Chemical", y = "Contribution Proportion") +
-  theme(panel.grid.major = element_blank(), 
-        panel.grid.minor = element_blank(),
-        panel.background = element_blank())
+  theme(
+    panel.grid.major = element_blank(),
+    panel.grid.minor = element_blank(),
+    panel.background = element_blank()
+  )
 
 #ggsave("fingerprint.png", c)
 ```
