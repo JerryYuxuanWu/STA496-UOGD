@@ -781,7 +781,7 @@ get_residual <- function(component, seed, method, objective) {
   } else if (objective == 'kl') {
     log_term <- normalized_matrix_less_o3/fitted
     log_term[log_term<.Machine$double.eps] <- .Machine$double.eps
-    return(sum(normalized_matrix_less_o3 * log(log_term) - fitted + normalized_matrix_less_o3))
+    return(sum(normalized_matrix_less_o3 * log(log_term) + fitted - normalized_matrix_less_o3))
   } else if (objective == 'rss') {
     return(norm(normalized_matrix_less_o3 - fitted, type = 'F')^2)
   }
