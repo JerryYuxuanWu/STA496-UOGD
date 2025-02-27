@@ -548,8 +548,7 @@ get_wind_plots <- function(W, y_axis_upper = rep(10, 5),
       )
   })
   
-  
-  grid.arrange(grobs = plots, ncol = 3)
+  return(plots)
 }
 ```
 
@@ -605,6 +604,8 @@ H <- coef(output)
 ```
 
 #### Source Contribution plots
+* Source Contribution plots
+
 ```{r}
 # Convert H to a data frame for ggplot
 H_df_5c_less_o3 <- as.data.frame(H)
@@ -638,6 +639,7 @@ grid.arrange(nmfplt_1_lsnmf_random_less_o3_5c, nmfplt_2_lsnmf_random_less_o3_5c,
 ```
 
 #### Fingerprint plot
+* Fingerprint plots
 
 ```{r}
 fingerprint <- get_fingerprint_plot(H_df_5c_less_o3, c(
@@ -652,9 +654,12 @@ fingerprint
 ```
 
 #### Wind plot
-\newline
+* Wind plots
+
 ```{r}
 wind_plot <- get_wind_plots(W, y_axis_upper = c(4, 2, 3.5, 3.5, 4.5))
+
+grid.arrange(grobs = wind_plot, ncol = 3)
 ```
 
 ## LS-NMF + nndsvd seed
@@ -694,6 +699,7 @@ H <- coef(output)
 ```
 
 #### Source Contribution plots
+* Source Contribution plots
 
 ```{r}
 # Convert H to a data frame for ggplot
@@ -728,6 +734,7 @@ grid.arrange(nmfplt_1_lsnmf_nndsvd_less_o3_5c, nmfplt_2_lsnmf_nndsvd_less_o3_5c,
 ```
 
 #### Fingerprint plot
+* Fingerprint plots
 
 ```{r}
 fingerprint <- get_fingerprint_plot(H_df_5c_less_o3, c(
@@ -742,13 +749,16 @@ fingerprint
 ```
 
 #### Wind plot
+* Wind plots
 
 ```{r}
 wind_plot <- get_wind_plots(W, y_axis_upper = c(0.25, 0.1, 0.18, 0.15, 0.15))
+grid.arrange(grobs = wind_plot, ncol = 3)
 ```
 
 ## Comparing random seed vs nndsvd for ls-nmf
 Residuals is defined as sum(((X - fitted(object)) * weight)^2)/2
+
 ```{r}
 tibble(component = components,
        random_residual = lsnmf_random_less_o3$measures$residuals,
@@ -790,7 +800,9 @@ kl_random_less_o3 <- readRDS('kl_random_less_o3.rds')
 # plots the NMF rank survey
 plot(kl_random_less_o3)
 ```
+
 ### Look at 5 factors:
+
 ```{r}
 output <- kl_random_less_o3$fit$`5`
 W <- basis(output)
@@ -798,6 +810,7 @@ H <- coef(output)
 ```
 
 #### Source Contribution plots
+* Source Contribution plots
 
 ```{r}
 # Convert H to a data frame for ggplot
@@ -832,6 +845,7 @@ grid.arrange(nmfplt_1_kl_random_less_o3_5c, nmfplt_2_kl_random_less_o3_5c,
 ```
 
 #### Fingerprint plot
+* Fingerprint plots
 
 ```{r}
 fingerprint <- get_fingerprint_plot(H_df_5c_less_o3, c(
@@ -846,9 +860,11 @@ fingerprint
 ```
 
 #### Wind plot
+* Wind plots
 
 ```{r}
 wind_plot <- get_wind_plots(W, y_axis_upper = c(4.5, 1.8, 0.9, 4, 2))
+grid.arrange(grobs = wind_plot, ncol = 3)
 ```
 
 ## KL + nndsvd
@@ -892,6 +908,7 @@ plot(kl_nndsvd_less_o3)
 ```
 
 ### Look at 5 factors:
+
 ```{r}
 output <- kl_nndsvd_less_o3$fit$`5`
 W <- basis(output)
@@ -899,6 +916,8 @@ H <- coef(output)
 ```
 
 #### Source Contribution plots
+* Source Contribution plots
+
 ```{r}
 # Convert H to a data frame for ggplot
 H_df_5c_less_o3 <- as.data.frame(H)
@@ -931,6 +950,7 @@ grid.arrange(nmfplt_1_kl_nndsvd_less_o3_5c, nmfplt_2_kl_nndsvd_less_o3_5c,
 ```
 
 #### Fingerprint plot
+* Fingerprint plots
 
 ```{r}
 fingerprint <- get_fingerprint_plot(H_df_5c_less_o3, c(
@@ -945,9 +965,11 @@ fingerprint
 ```
 
 #### Wind plot
+* Wind plots
 
 ```{r}
 wind_plot <- get_wind_plots(W, y_axis_upper = c(0.225, 0.08, 0.18, 0.09, 0.1125))
+grid.arrange(grobs = wind_plot, ncol = 3)
 ```
 
 ```{r, eval=FALSE, echo = FALSE}
