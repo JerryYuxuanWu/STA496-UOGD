@@ -302,6 +302,8 @@ hourly_nona_bgrm_norm_zerorepl <- hourly_nona_bgrm_norm %>%
 hourly_nona_bgrm_norm_zerorepl <- hourly_nona_bgrm_norm_zerorepl %>%
   mutate(across(adjusted_background_voc$chemical, 
                 ~ replace_zero_with_random(.x, cur_column(), adjusted_background_voc)))
+
+summary(hourly_nona_bgrm_norm_zerorepl)
 ```
 
 - FINAL step: create matrix of processed and normalized concentrations for NMF

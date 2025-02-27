@@ -123,6 +123,7 @@ grid.arrange(get(paste0(vocs[17], '_boxplot')), get(paste0(vocs[18], '_boxplot')
 
 ### Data pre-processing
 
+#### Step 1: limits of detection
 - STEP 1: Limits of detection
 
 ```{r, message = FALSE}
@@ -155,6 +156,7 @@ LOD_voc_avg <- LOD_voc_avg %>%
   head(20)
 ```
 
+#### Step 2: Background correction
 - STEP 2: Background correction 
 
 ```{r echo=FALSE}
@@ -269,10 +271,10 @@ hourly_nona_bgrm <- hourly_nona_bgrm %>%
 colSums(hourly_nona_bgrm == 0)
 ```
 
+#### Step 3: Replace zero with random value between 0 and 0.5*LOD
 - STEP 3: replace zero values with random values between 0 and 0.5xLOD
 
 ```{r}
-
 set.seed(123)
 replace_zero_with_random <- function(column, name, LOD_df){
   LOD <- LOD_df$LOD[LOD_df$chemical == name]
@@ -289,8 +291,8 @@ hourly_nona_bgrm_zerorepl <- hourly_nona_bgrm_zerorepl %>%
                 ~ replace_zero_with_random(.x, cur_column(), adjusted_background_voc)))
 ```
 
-
-- STEP 4: Normalize the non-vocs
+#### Step 4: Normalize
+- STEP 4: Normalize the measurements
 
 ```{r}
 #normalizing function
@@ -300,8 +302,6 @@ normalize_column <- function(column){
   return ((column - background)/(max - background))
 }
 ```
-
-- STEP 4: Normalize all
 
 ```{r}
 # normalize all
@@ -369,14 +369,20 @@ for (i in 1:dim(uncertainty_matrix)[1]) {
     }
   }
 }
+```
 
+```{r}
+# Convert zero uncertainties to the next smallest uncertainty of the corresponding compound
+uncertainty_matrix[uncertainty_matrix==0]<-apply(uncertainty_matrix, 2, function(x) sort(x)[2])
 # THIS NEEDS TO BE CHECKED IF WE WANT TO TAKE RECIPROCAL FOR EACH ELEMENT
 # CURRENT RESULTS IS WHEN WEIGHT = UNCERTAINTY
 # NOT POSSIBLE TO DO SIMPLY TAKE RECIPROCAL SINCE THERE'RE 0 UNCERTAINTIES
-weight_matrix <- uncertainty_matrix 
+weight_matrix <- 1/uncertainty_matrix 
+
+summary(weight_matrix)
 ```
 
-### Helper for source contributions plots
+### Helper functions for plots
 
 ```{r, include = FALSE}
 # Define the desired order of chemicals
@@ -410,7 +416,6 @@ desired_order <- c(
   "ch4"
 )
 
-#color_pal <- c("#ccd5ae", "#e9edc9", "#fefae0", "#faedcd", "#d4a373", "#df7d5a")
 color_pal<-c("#00AFBB", "#E7B800", "#FC4E07","#0072B2","#8B4513")
 
 get_component_plot <- function(data, component, title) {
@@ -424,7 +429,7 @@ get_component_plot <- function(data, component, title) {
             theme_minimal()+
             theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
             geom_text(aes(label = sprintf("%.2f", round(Contribution, 2))), 
-                      color = "blue", size = 3, nudge_y = 0.1) +
+                      color = "blue", size = 3, vjust = -0.5) +
             labs(x = "Chemical", y = "Contribution", title = title)+
             theme(
             text = element_text(size = 14), # Base text size for all text elements
@@ -433,6 +438,118 @@ get_component_plot <- function(data, component, title) {
             plot.title = element_text(size = 18) # Size of the plot title
             )
   return(plot)
+}
+```
+
+```{r}
+get_fingerprint_plot <- function(H, factor_names = c('Factor 1', 'Factor 2',
+                                                     'Factor 3', 'Factor 4',
+                                                     'Factor 5')){
+  custom_colors <- setNames(color_pal,
+                            factor_names)
+
+  # Convert to proportions
+  contrib_prop <- apply(H[,1:(length(H)-1)], MARGIN = 2, 
+                        FUN = function(x) {x/sum(x)})
+  
+  contrib_prop <- contrib_prop %>%
+    as_tibble() %>%
+    mutate(Component = factor_names) %>%
+    mutate(Component = factor(Component, levels = factor_names)) %>%
+    pivot_longer(cols = -Component,
+                 names_to = "Chemical",
+                 values_to = "Contribution_prop") %>%
+    mutate(Chemical = factor(Chemical, levels = desired_order))
+    
+  return(contrib_prop %>%
+    ggplot(aes(fill = Component, y = Contribution_prop, x = Chemical)) +
+    geom_bar(position = "fill", stat = "identity") +
+    scale_fill_manual(values = custom_colors) +
+    theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+    labs(x = "Chemical", y = "Contribution Proportion") +
+    theme(
+      panel.grid.major = element_blank(),
+      panel.grid.minor = element_blank(),
+      panel.background = element_blank()
+    ))
+}
+```
+
+```{r}
+hourly_wind_nona <- hourly_nona %>%
+  select(wdr_deg, wsp_ms)
+
+get_wind_plot_data <- function(W, factor_names = c('Factor 1', 'Factor 2',
+                                                     'Factor 3', 'Factor 4',
+                                                     'Factor 5')){
+  data_to_plot <- tibble(
+    component1 = W[, 1],
+    component2 = W[, 2],
+    component3 = W[, 3],
+    component4 = W[, 4],
+    component5 = W[, 5],
+    wd = round(hourly_wind_nona$wdr_deg, -1)
+  )
+  
+  data_long <- data_to_plot %>%
+  pivot_longer(cols = starts_with("component"), names_to = "Factor", values_to = "Expression")
+  
+  data_long <- data_long %>%
+    mutate(wd = factor(wd, levels = sort(unique(wd))))  
+    
+  data_long
+}
+
+get_wind_plots <- function(W, y_axis_upper = rep(10, 5),
+                               factor_names = c('Factor 1', 'Factor 2',
+                                                     'Factor 3', 'Factor 4',
+                                                     'Factor 5')){
+  data_long <- get_wind_plot_data(W, factor_names)
+  
+  # Select every second wind direction for labeling
+  every_second_label <- levels(data_long$wd)[seq(1, length(levels(data_long$wd)), by = 2)]
+  
+  factor_labels <- setNames(paste(c('Factor 1', 'Factor 2','Factor 3', 'Factor 4',
+                                    'Factor 5'), ' - ', factor_names), paste0('component', 1:5))
+    
+  y_axis_limits <- list(
+    "component1" = c(0, y_axis_upper[1]),
+    "component2" = c(0, y_axis_upper[2]),
+    "component3" = c(0, y_axis_upper[3]),
+    "component4" = c(0, y_axis_upper[4]),
+    "component5" = c(0, y_axis_upper[5])
+  )
+
+
+  plots <- lapply(1:5, function(i) {
+    factor_name <- paste0("component", i)
+    
+    ggplot(data_long %>% filter(Factor == factor_name), 
+           aes(x = wd, y = Expression, fill = as.factor(wd))) +
+      geom_boxplot(outliers=F, size=0.3) +  
+      scale_fill_manual(values = rep(color_pal[i], length(unique(data_long$wd)))) +  
+      scale_x_discrete(breaks = every_second_label) +  
+      coord_cartesian(ylim = y_axis_limits[[factor_name]]) + 
+      scale_y_continuous(
+        limits = c(0, NA),
+        breaks = seq(0, y_axis_limits[[factor_name]][2], length.out = 5) ,
+        expand=expansion(mult=c(0))
+      ) +
+      labs(title = factor_labels[factor_name], 
+           x = "Wind Direction (°)", 
+           y = "Factor Expression") +
+      theme_minimal() +
+      theme(
+        legend.position = "none",
+        plot.title = element_text(size = 6),  # Smaller title text
+        axis.title = element_text(size = 6),  # Smaller axis labels
+        axis.text = element_text(size = 6),  # Smaller x and y tick labels
+        axis.text.x = element_text(angle = 45, hjust = 1)
+      )
+  })
+  
+  
+  grid.arrange(grobs = plots, ncol = 3)
 }
 ```
 
@@ -469,7 +586,7 @@ get_component_plot <- function(data, component, title) {
 # end_time_lsnmf_rand <- Sys.time()
 # end_time_lsnmf_rand-start_time_lsnmf_rand
 # # 19.25 minutes to run the above
-# 
+
 # saveRDS(lsnmf_random_less_o3,
 #         'lsnmf_random_less_o3.rds')
 lsnmf_random_less_o3 <- readRDS('lsnmf_random_less_o3.rds')
@@ -487,6 +604,7 @@ W <- basis(output)
 H <- coef(output)
 ```
 
+#### Source Contribution plots
 ```{r}
 # Convert H to a data frame for ggplot
 H_df_5c_less_o3 <- as.data.frame(H)
@@ -519,26 +637,29 @@ grid.arrange(nmfplt_1_lsnmf_random_less_o3_5c, nmfplt_2_lsnmf_random_less_o3_5c,
 #ggsave("factors.png", p)
 ```
 
-## LS-NMF + nndsvd seed
+#### Fingerprint plot
 
-```{r, echo = FALSE, eval = FALSE}
-# Test chunk
-# lsnmf_nndsvd_less_o3_test <- nmf(
-#   normalized_matrix_less_o3,
-#   rank = 4,
-#   method = "ls-nmf",
-#   weight = weight_matrix,
-#   nrun = 5,
-#   seed = 'nndsvd',
-#   .options = list('keep.all'=TRUE)
-# )
-# lsnmf_nndsvd_less_o3_test@.Data
-# Each of the 5 models are obviously identical as we're using nndsvd without randomization.
+```{r}
+fingerprint <- get_fingerprint_plot(H_df_5c_less_o3, c(
+      'Traffic',
+      'Combustion',
+      'Oil & Gas Emissions',
+      'Flare (factor 4)',
+      'Flare (factor 5)'
+    ))
+
+fingerprint
 ```
 
-```{r, warning = FALSE}
-#function below used to estimate the optimal rank and will be used in the nmf() function.
+#### Wind plot
+\newline
+```{r}
+wind_plot <- get_wind_plots(W, y_axis_upper = c(4, 2, 3.5, 3.5, 4.5))
+```
 
+## LS-NMF + nndsvd seed
+```{r, warning = FALSE}
+# Run nmf with 4:10 components and nndsvd seed
 # start_time_lsnmf_nndsvd <- Sys.time()
 # 
 # lsnmf_nndsvd_less_o3 <- nmf(
@@ -552,10 +673,11 @@ grid.arrange(nmfplt_1_lsnmf_random_less_o3_5c, nmfplt_2_lsnmf_random_less_o3_5c,
 # 
 # end_time_lsnmf_nndsvd <- Sys.time()
 # end_time_lsnmf_nndsvd-start_time_lsnmf_nndsvd
-# # 1.34 minutes to run the above
-# 
+# # # 1.34 minutes to run the above
+# # 
 # saveRDS(lsnmf_nndsvd_less_o3,
 #         'lsnmf_nndsvd_less_o3.rds')
+
 lsnmf_nndsvd_less_o3 <- readRDS('lsnmf_nndsvd_less_o3.rds')
 ```
 
@@ -570,6 +692,8 @@ output <- lsnmf_nndsvd_less_o3$fit$`5`
 W <- basis(output)
 H <- coef(output)
 ```
+
+#### Source Contribution plots
 
 ```{r}
 # Convert H to a data frame for ggplot
@@ -603,6 +727,26 @@ grid.arrange(nmfplt_1_lsnmf_nndsvd_less_o3_5c, nmfplt_2_lsnmf_nndsvd_less_o3_5c,
 #ggsave("factors.png", p)
 ```
 
+#### Fingerprint plot
+
+```{r}
+fingerprint <- get_fingerprint_plot(H_df_5c_less_o3, c(
+      'Traffic',
+      'Combustion',
+      'Oil & Gas Emissions',
+      'Flare (factor 4)',
+      'Flare (factor 5)'
+    ))
+fingerprint
+#ggsave("fingerprint.png", c)
+```
+
+#### Wind plot
+
+```{r}
+wind_plot <- get_wind_plots(W, y_axis_upper = c(0.25, 0.1, 0.18, 0.15, 0.15))
+```
+
 ## Comparing random seed vs nndsvd for ls-nmf
 Residuals is defined as sum(((X - fitted(object)) * weight)^2)/2
 ```{r}
@@ -617,7 +761,7 @@ tibble(component = components,
   scale_colour_manual("", 
                     breaks = c("Random seed", "nndsvd"),
                     values = c("tomato1", "dodgerblue")) +
-  labs(x = 'Rank', y = 'Residual') +
+  labs(x = 'Rank', y = 'Residual', 'WRSS') +
   theme_bw()
 ```
 
@@ -653,6 +797,8 @@ W <- basis(output)
 H <- coef(output)
 ```
 
+#### Source Contribution plots
+
 ```{r}
 # Convert H to a data frame for ggplot
 H_df_5c_less_o3 <- as.data.frame(H)
@@ -683,6 +829,26 @@ grid.arrange(nmfplt_1_kl_random_less_o3_5c, nmfplt_2_kl_random_less_o3_5c,
              nmfplt_5_kl_random_less_o3_5c, 
              ncol=2, top = textGrob("KL Random Seed",gp=gpar(fontsize=20,font=3)))
 #ggsave("factors.png", p)
+```
+
+#### Fingerprint plot
+
+```{r}
+fingerprint <- get_fingerprint_plot(H_df_5c_less_o3, c(
+      'Traffic',
+      'Combustion',
+      'Oil & Gas Emissions',
+      'Flare (factor 4)',
+      'Flare (factor 5)'
+    ))
+fingerprint
+#ggsave("fingerprint.png", c)
+```
+
+#### Wind plot
+
+```{r}
+wind_plot <- get_wind_plots(W, y_axis_upper = c(4.5, 1.8, 0.9, 4, 2))
 ```
 
 ## KL + nndsvd
@@ -732,6 +898,7 @@ W <- basis(output)
 H <- coef(output)
 ```
 
+#### Source Contribution plots
 ```{r}
 # Convert H to a data frame for ggplot
 H_df_5c_less_o3 <- as.data.frame(H)
@@ -763,17 +930,59 @@ grid.arrange(nmfplt_1_kl_nndsvd_less_o3_5c, nmfplt_2_kl_nndsvd_less_o3_5c,
              ncol=2, top = textGrob("KL nndsvd Seed",gp=gpar(fontsize=20,font=3)))
 ```
 
-```{r, eval=TRUE, echo = F}
-# Plot the errors
-# df <- data.frame(components, errors)
-# ggplot(df, aes(x = components, y = errors)) +
-#   geom_line() +
-#   geom_point() +
-#   theme_minimal() +
-#   geom_text(aes(label = sprintf("%.3f", errors)), color = "blue", size = 3, vjust = -0.5) +
-#   labs(title = "NMF Reconstruction Error vs. Number of Components",
-#        x = "Number of Components", y = "Reconstruction Error")
+#### Fingerprint plot
+
+```{r}
+fingerprint <- get_fingerprint_plot(H_df_5c_less_o3, c(
+      'Traffic',
+      'Combustion',
+      'Oil & Gas Emissions',
+      'Flare (factor 4)',
+      'Flare (factor 5)'
+    ))
+fingerprint
+#ggsave("fingerprint.png", c)
 ```
+
+#### Wind plot
+
+```{r}
+wind_plot <- get_wind_plots(W, y_axis_upper = c(0.225, 0.08, 0.18, 0.09, 0.1125))
+```
+
+```{r, eval=FALSE, echo = FALSE}
+
+boxplot(component1 ~ wd, data = data_to_plot,
+        outline = FALSE, col = color_pal[1],
+        main = "Factor 1 - Traffic",
+        xlab = "Wind direction (°)",
+        ylab = "Factor expression")
+
+boxplot(component2 ~ wd, data = data_to_plot,
+        outline = FALSE, col = color_pal[2],
+        main = "Factor 2 - Combustion",
+        xlab = "Wind direction (°)",
+        ylab = "Factor expression")
+
+boxplot(component3 ~ wd, data = data_to_plot,
+        outline = FALSE, col = color_pal[3],
+        main = "Factor 3 - Oil & Gas Emissions",
+        xlab = "Wind direction (°)",
+        ylab = "Factor expression")
+
+boxplot(component4 ~ wd, data = data_to_plot,
+        outline = FALSE, col = color_pal[4],
+        main = "Factor 4 - Flaring",
+        xlab = "Wind direction (°)",
+        ylab = "Factor expression")
+
+boxplot(component5 ~ wd, data = data_to_plot,
+        outline = FALSE, col = color_pal[5],
+        main = "Factor 5 - Flaring Sour Gas",
+        xlab = "Wind direction (°)",
+        ylab = "Factor expression")
+```
+
 
 ## Comparing all four methods
 Using RSS, WRSS, and KL
@@ -924,177 +1133,6 @@ grid.arrange(nmfplt_1_svd_5c_less_o3, nmfplt_2_svd_5c_less_o3,
              nmfplt_3_svd_5c_less_o3, nmfplt_4_svd_5c_less_o3, nmfplt_5_svd_5c_less_o3, 
              ncol=2)
 #ggsave("factors.png", p)
-```
-
-### Fingerprint plot
-```{r}
-
-custom_colors <- c("Traffic" = "#00AFBB", 
-                   "Combustion" = "#E7B800", 
-                   "Oil & Gas Emissions" = "#FC4E07", 
-                   "Flare (factor 4)" = "#0072B2", 
-                   "Flare (factor 5)" = "#8B4513")
-
-contrib_prop <- apply(H_df_5c_less_o3[,1:(length(H_df_5c_less_o3)-1)], MARGIN = 2, 
-                      FUN = function(x) {x/sum(x)})
-
-contrib_prop %>%
-  as_tibble() %>%
-  mutate(
-    Component = c(
-      'Traffic',
-      'Combustion',
-      'Oil & Gas Emissions',
-      'Flare (factor 4)',
-      'Flare (factor 5)'
-    )
-  ) %>%
-  mutate(Component = factor(
-    Component,
-    levels = c(
-      'Traffic',
-      'Combustion',
-      'Oil & Gas Emissions',
-      'Flare (factor 4)',
-      'Flare (factor 5)'
-    )
-  )) %>%
-  pivot_longer(cols = -Component,
-               names_to = "Chemical",
-               values_to = "Contribution_prop") %>%
-  mutate(Chemical = factor(Chemical, levels = desired_order)) %>%
-  ggplot(aes(fill = Component, y = Contribution_prop, x = Chemical)) +
-  geom_bar(position = "fill", stat = "identity") +
-  scale_fill_manual(values = custom_colors) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  labs(x = "Chemical", y = "Contribution Proportion") +
-  theme(
-    panel.grid.major = element_blank(),
-    panel.grid.minor = element_blank(),
-    panel.background = element_blank()
-  )
-
-#ggsave("fingerprint.png", c)
-```
-
-
-
-### Wind plots
-```{r}
-hourly_wind_nona <- hourly_nona %>%
-  select(wdr_deg, wsp_ms)
-
-data_to_plot <- tibble(
-  component1 = basis(nmf_result_5c_less_o3)[,1],
-  component2 = basis(nmf_result_5c_less_o3)[,2],
-  component3 = basis(nmf_result_5c_less_o3)[,3],
-  component4 = basis(nmf_result_5c_less_o3)[,4],
-  component5 = basis(nmf_result_5c_less_o3)[,5],
-  wd = round(hourly_wind_nona$wdr_deg, -1)
-)
-
-```
-
-```{r warning=FALSE}
-
-
-color_pal <- c("#00AFBB", "#E7B800", "#FC4E07", "#0072B2", "#8B4513") 
-
-
-data_long <- data_to_plot %>%
-  pivot_longer(cols = starts_with("component"), names_to = "Factor", values_to = "Expression")
-
-
-factor_labels <- c(
-  "component1" = "Factor 1 - Traffic",
-  "component2" = "Factor 2 - Combustion",
-  "component3" = "Factor 3 - Oil & Gas Emissions",
-  "component4" = "Factor 4 - Flaring",
-  "component5" = "Factor 5 - Flaring Sour Gas"
-)
-
-
-data_long <- data_long %>%
-  mutate(wd = factor(wd, levels = sort(unique(wd))))  
-
-# Select every second wind direction for labeling
-every_second_label <- levels(data_long$wd)[seq(1, length(levels(data_long$wd)), by = 2)]
-
-
-y_axis_limits <- list(
-  "component1" = c(0, 0.2),
-  "component2" = c(0, 0.08),
-  "component3" = c(0, 0.16),
-  "component4" = c(0, 0.08),
-  "component5" = c(0, 0.12)
-)
-
-
-plots <- lapply(1:5, function(i) {
-  factor_name <- paste0("component", i)
-  
-  ggplot(data_long %>% filter(Factor == factor_name), 
-         aes(x = wd, y = Expression, fill = as.factor(wd))) +
-    geom_boxplot(outliers=F, size=0.3) +  
-    scale_fill_manual(values = rep(color_pal[i], length(unique(data_long$wd)))) +  
-    scale_x_discrete(breaks = every_second_label) +  
-    coord_cartesian(ylim = y_axis_limits[[factor_name]]) + 
-    scale_y_continuous(
-      limits = c(0, NA),
-      breaks = seq(0, y_axis_limits[[factor_name]][2], length.out = 5) ,
-      expand=expansion(mult=c(0))
-    ) +
-    labs(title = factor_labels[factor_name], 
-         x = "Wind Direction (°)", 
-         y = "Factor Expression") +
-    theme_minimal() +
-    theme(
-      legend.position = "none",
-      plot.title = element_text(size = 6),  # Smaller title text
-      axis.title = element_text(size = 6),  # Smaller axis labels
-      axis.text = element_text(size = 6),  # Smaller x and y tick labels
-      axis.text.x = element_text(angle = 45, hjust = 1)
-    )
-})
-
-
-grid.arrange(grobs = plots, ncol = 3)
-# ggsave("factors-wind.png", w)
-```
-
-
-
-```{r, eval=FALSE, echo = FALSE}
-
-boxplot(component1 ~ wd, data = data_to_plot,
-        outline = FALSE, col = color_pal[1],
-        main = "Factor 1 - Traffic",
-        xlab = "Wind direction (°)",
-        ylab = "Factor expression")
-
-boxplot(component2 ~ wd, data = data_to_plot,
-        outline = FALSE, col = color_pal[2],
-        main = "Factor 2 - Combustion",
-        xlab = "Wind direction (°)",
-        ylab = "Factor expression")
-
-boxplot(component3 ~ wd, data = data_to_plot,
-        outline = FALSE, col = color_pal[3],
-        main = "Factor 3 - Oil & Gas Emissions",
-        xlab = "Wind direction (°)",
-        ylab = "Factor expression")
-
-boxplot(component4 ~ wd, data = data_to_plot,
-        outline = FALSE, col = color_pal[4],
-        main = "Factor 4 - Flaring",
-        xlab = "Wind direction (°)",
-        ylab = "Factor expression")
-
-boxplot(component5 ~ wd, data = data_to_plot,
-        outline = FALSE, col = color_pal[5],
-        main = "Factor 5 - Flaring Sour Gas",
-        xlab = "Wind direction (°)",
-        ylab = "Factor expression")
 ```
 
 
