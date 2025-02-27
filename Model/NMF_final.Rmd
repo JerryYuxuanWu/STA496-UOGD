@@ -268,8 +268,29 @@ hourly_nona_bgrm <- hourly_nona_bgrm %>%
 # look at zero values
 colSums(hourly_nona_bgrm == 0)
 ```
-- Normalize then replace zero
-- STEP 3: Normalize the non-vocs
+
+- STEP 3: replace zero values with random values between 0 and 0.5xLOD
+
+```{r}
+
+set.seed(123)
+replace_zero_with_random <- function(column, name, LOD_df){
+  LOD <- LOD_df$LOD[LOD_df$chemical == name]
+  column <- if_else(column == 0, round(runif(length(column), 0, 0.5 * LOD), 3), column)
+  return (column)
+}
+
+hourly_nona_bgrm_zerorepl <- hourly_nona_bgrm %>%
+  mutate(across(adjusted_background_non_voc$chemical,
+                ~ replace_zero_with_random(.x, cur_column(), adjusted_background_non_voc)))
+
+hourly_nona_bgrm_zerorepl <- hourly_nona_bgrm_zerorepl %>%
+  mutate(across(adjusted_background_voc$chemical,
+                ~ replace_zero_with_random(.x, cur_column(), adjusted_background_voc)))
+```
+
+
+- STEP 4: Normalize the non-vocs
 
 ```{r}
 #normalizing function
@@ -280,90 +301,22 @@ normalize_column <- function(column){
 }
 ```
 
-- STEP 3: Normalize all
+- STEP 4: Normalize all
 
 ```{r}
 # normalize all
-hourly_nona_bgrm_norm <- as_tibble(sapply(as.list(hourly_nona_bgrm), 
-                                                   normalize_column)) 
+hourly_nona_bgrm_zerorepl_norm <- as_tibble(sapply(as.list(hourly_nona_bgrm_zerorepl),
+                                                   normalize_column))
 #normalize the NON_VOC
-summary(hourly_nona_bgrm_norm)
-```
-
-- STEP 4: replace zero values with random values between 0 and 0.5xLOD
-
-```{r}
-set.seed(123)
-replace_zero_with_random <- function(column, name, LOD_df){
-  LOD <- LOD_df$LOD[LOD_df$chemical == name]
-  column <- if_else(column == 0, round(runif(length(column), 0.001, 0.5 * LOD), 3), column)
-  return (column)
-}
-
-hourly_nona_bgrm_norm_zerorepl <- hourly_nona_bgrm_norm %>%
-  mutate(across(adjusted_background_non_voc$chemical, 
-                ~ replace_zero_with_random(.x, cur_column(), adjusted_background_non_voc)))
-
-hourly_nona_bgrm_norm_zerorepl <- hourly_nona_bgrm_norm_zerorepl %>%
-  mutate(across(adjusted_background_voc$chemical, 
-                ~ replace_zero_with_random(.x, cur_column(), adjusted_background_voc)))
+summary(hourly_nona_bgrm_zerorepl_norm)
 ```
 
 - FINAL step: create matrix of processed and normalized concentrations for NMF
 
 ```{r}
-normalized_matrix <- as.matrix(hourly_nona_bgrm_norm_zerorepl) 
+normalized_matrix <- as.matrix(hourly_nona_bgrm_zerorepl_norm)
 #important: using the normalized VOCs for this file
 ```
-
-<!-- - STEP 3: replace zero values with random values between 0 and 0.5xLOD -->
-
-<!-- ```{r} -->
-
-<!-- set.seed(123) -->
-<!-- replace_zero_with_random <- function(column, name, LOD_df){ -->
-<!--   LOD <- LOD_df$LOD[LOD_df$chemical == name] -->
-<!--   column <- if_else(column == 0, round(runif(length(column), 0, 0.5 * LOD), 3), column) -->
-<!--   return (column) -->
-<!-- } -->
-
-<!-- hourly_nona_bgrm_zerorepl <- hourly_nona_bgrm %>% -->
-<!--   mutate(across(adjusted_background_non_voc$chemical,  -->
-<!--                 ~ replace_zero_with_random(.x, cur_column(), adjusted_background_non_voc))) -->
-
-<!-- hourly_nona_bgrm_zerorepl <- hourly_nona_bgrm_zerorepl %>% -->
-<!--   mutate(across(adjusted_background_voc$chemical,  -->
-<!--                 ~ replace_zero_with_random(.x, cur_column(), adjusted_background_voc))) -->
-<!-- ``` -->
-
-
-<!-- - STEP 4: Normalize the non-vocs -->
-
-<!-- ```{r} -->
-<!-- #normalizing function -->
-<!-- normalize_column <- function(column){ -->
-<!--   background <- quantile(column, 0) -->
-<!--   max <- quantile(column, 1) # this could be adjusted -->
-<!--   return ((column - background)/(max - background)) -->
-<!-- } -->
-<!-- ``` -->
-
-<!-- - STEP 4: Normalize all -->
-
-<!-- ```{r} -->
-<!-- # normalize all -->
-<!-- hourly_nona_bgrm_zerorepl_norm <- as_tibble(sapply(as.list(hourly_nona_bgrm_zerorepl),  -->
-<!--                                                    normalize_column))  -->
-<!-- #normalize the NON_VOC -->
-<!-- summary(hourly_nona_bgrm_zerorepl_norm) -->
-<!-- ``` -->
-
-<!-- - FINAL step: create matrix of processed and normalized concentrations for NMF -->
-
-<!-- ```{r} -->
-<!-- normalized_matrix <- as.matrix(hourly_nona_bgrm_zerorepl_norm)  -->
-<!-- #important: using the normalized VOCs for this file -->
-<!-- ``` -->
 
 # NMF section
 ## Preprocess
@@ -417,7 +370,10 @@ for (i in 1:dim(uncertainty_matrix)[1]) {
   }
 }
 
-weight_matrix <- 1/uncertainty_matrix 
+# THIS NEEDS TO BE CHECKED IF WE WANT TO TAKE RECIPROCAL FOR EACH ELEMENT
+# CURRENT RESULTS IS WHEN WEIGHT = UNCERTAINTY
+# NOT POSSIBLE TO DO SIMPLY TAKE RECIPROCAL SINCE THERE'RE 0 UNCERTAINTIES
+weight_matrix <- uncertainty_matrix 
 ```
 
 ### Helper for source contributions plots
@@ -578,29 +534,6 @@ grid.arrange(nmfplt_1_lsnmf_random_less_o3_5c, nmfplt_2_lsnmf_random_less_o3_5c,
 # )
 # lsnmf_nndsvd_less_o3_test@.Data
 # Each of the 5 models are obviously identical as we're using nndsvd without randomization.
-```
-
-```{r, echo = FALSE, eval = FALSE}
-# Test chunk 2
-lsnmf_nndsvd_less_o3_test2a <- nmf(
-  normalized_matrix_less_o3,
-  rank = 5,
-  method = "ls-nmf",
-  weight = weight_matrix,
-  nrun = 1,
-  seed = 'nndsvd'
-)
-
-lsnmf_nndsvd_less_o3_test2b <- nmf(
-  normalized_matrix_less_o3,
-  rank = 5,
-  method = "ls-nmf",
-  weight = 1/weight_matrix,
-  nrun = 1,
-  seed = 'nndsvd'
-)
-lsnmf_nndsvd_less_o3_test2a
-lsnmf_nndsvd_less_o3_test2b
 ```
 
 ```{r, warning = FALSE}
