@@ -1,10 +1,10 @@
 ---
-title: "NMF Final (Only nndsvd 5 component without ozone)"
+title: "NMF Final (Full time period))"
 author: "William Zhang, Eva, Jerry, Meredith"
-date: "2025-01-24"
+date: "2025-03-21"
 output:
-  pdf_document: default
   html_document: default
+  pdf_document: default
 ---
 ```{r setup, warning = FALSE, message = FALSE}
 # load the packages
@@ -353,16 +353,24 @@ for (i in 1:dim(uncertainty_matrix)[1]) {
     xij <- normalized_matrix_less_o3[i, j]
     LOD <- LOD_merged$LOD[LOD_merged$chemical == chemical]
     # Get LOD value for this row 
-    if (j == 1) { 
-      # based on equation 6, we sqrt ch4 (at column = 1) and times by 1
-      uncertainty_matrix[i, j] <- sqrt(xij)
-    } else if (j == 2) {
-      # 0.25 for co2 
-      uncertainty_matrix[i, j] <- 0.25 * sqrt(xij)
-    } else if (j == 3) { 
-      # 0.5 for CO
-      uncertainty_matrix[i, j] <- 0.5 * sqrt(xij)
-    } else if (xij <= LOD) {
+    # Based on Guha Eq6, Eq5a, EQ5c
+    # if (j == 1) { 
+    #   # based on equation 6, we sqrt ch4 (at column = 1) and times by 1
+    #   uncertainty_matrix[i, j] <- sqrt(xij)
+    # } else if (j == 2) {
+    #   # 0.25 for co2 
+    #   uncertainty_matrix[i, j] <- 0.25 * sqrt(xij)
+    # } else if (j == 3) { 
+    #   # 0.5 for CO
+    #   uncertainty_matrix[i, j] <- 0.5 * sqrt(xij)
+    # } else if (xij <= LOD) {
+    #   uncertainty_matrix[i, j] <- 2 * LOD # equation 5a) in reference paper
+    # } else {
+    #   uncertainty_matrix[i, j] <- sqrt(((0.1 * xij)**2 + LOD**2))  #equation 5c) in reference paper
+    # }
+    
+    # Based on Guha Eq5a, EQ5c
+    if (xij <= LOD) {
       uncertainty_matrix[i, j] <- 2 * LOD # equation 5a) in reference paper
     } else {
       uncertainty_matrix[i, j] <- sqrt(((0.1 * xij)**2 + LOD**2))  #equation 5c) in reference paper
@@ -553,22 +561,6 @@ get_wind_plots <- function(W, y_axis_upper = rep(10, 5),
 ```
 
 ## LS-NMF + Random seed
-```{r, echo = FALSE, eval = FALSE}
-# Test chunk
-# lsnmf_random_less_o3_test <- nmf(
-#   normalized_matrix_less_o3,
-#   rank = 4,
-#   method = "ls-nmf",
-#   weight = weight_matrix,
-#   nrun = 5,
-#   seed = 123456,
-#   .options = list('keep.all'=TRUE)
-# )
-# lsnmf_random_less_o3_test@.Data
-# So each of the 5 runs produced a different result and by default NMF finds the optimal one.
-# Optimal model is selected based on the residuals, defined as sum(((X - fitted(object)) * weight)^2)/2
-```
-
 ```{r}
 # for each rank, run 30 models and find best one
 # start_time_lsnmf_rand <- Sys.time()
@@ -584,7 +576,7 @@ get_wind_plots <- function(W, y_axis_upper = rep(10, 5),
 # 
 # end_time_lsnmf_rand <- Sys.time()
 # end_time_lsnmf_rand-start_time_lsnmf_rand
-# # 19.25 minutes to run the above
+# # 18.8 minutes to run the above
 
 # saveRDS(lsnmf_random_less_o3,
 #         'lsnmf_random_less_o3.rds')
@@ -678,7 +670,7 @@ grid.arrange(grobs = wind_plot, ncol = 3)
 # 
 # end_time_lsnmf_nndsvd <- Sys.time()
 # end_time_lsnmf_nndsvd-start_time_lsnmf_nndsvd
-# # # 1.34 minutes to run the above
+# 1.37 minutes to run the above
 # # 
 # saveRDS(lsnmf_nndsvd_less_o3,
 #         'lsnmf_nndsvd_less_o3.rds')
@@ -790,7 +782,7 @@ tibble(component = components,
 # 
 # end_time_kl_random <- Sys.time()
 # end_time_kl_random-start_time_kl_random
-# 14.27 minutes to run the above
+# 14.84 minutes to run the above
 
 # saveRDS(kl_random_less_o3, 'kl_random_less_o3.rds')
 
@@ -869,7 +861,7 @@ grid.arrange(grobs = wind_plot, ncol = 3)
 
 ## KL + nndsvd
 ```{r, warning = FALSE}
-# errors <- numeric(length(components) - 4)
+errors <- numeric(length(components) - 4)
 
 # Loop over the number of components
 # for (n in components) {
@@ -879,13 +871,13 @@ grid.arrange(grobs = wind_plot, ncol = 3)
 #   errors[n-3] <- error
 #   print(paste0('Completed ', n - 3, ' out of 7'))
 # }
-# 
+#
 # saveRDS(errors, 'errors_KL_nndsvd_less_o3.rds')
-# 
+#
 # errors <- readRDS('errors_KL_nndsvd_less_o3.rds')
 
 # start_time_kl_nndsvd <- Sys.time()
-# 
+# #
 # kl_nndsvd_less_o3 <- nmf(
 #   normalized_matrix_less_o3,
 #   rank = components,
@@ -896,8 +888,8 @@ grid.arrange(grobs = wind_plot, ncol = 3)
 # 
 # end_time_kl_nndsvd <- Sys.time()
 # end_time_kl_nndsvd-start_time_kl_nndsvd
-# 1 minute to run the above
-
+# # 1 minute to run the above
+# 
 # saveRDS(kl_nndsvd_less_o3, 'kl_nndsvd_less_o3.rds')
 
 kl_nndsvd_less_o3 <- readRDS('kl_nndsvd_less_o3.rds')

@@ -9,6 +9,8 @@ knitr::opts_chunk$set(echo = TRUE)
 library(tidyverse)
 library(zoo)
 library(htmlwidgets)
+library(openair)
+library(leaflet)
 ```
 
 # Load in merged data
@@ -92,5 +94,60 @@ map <- leaflet() %>%
 saveWidget(map, file="djb_map.html")
 ```
 
+# Plots for Ethane
+```{r}
+ethane <- hourly_data %>%
+  select(all_of(c('time_utc', 'ethane', 'wdr_deg', 'wsp_ms'))) %>%
+  mutate(datetime_mountain = with_tz(as.POSIXct(time_utc, tz = 'UTC', 
+                                                format = "%Y-%m-%d %H:%M:%OS"), 
+                                     tzone = "America/Denver")) %>%
+  na.omit()
+```
 
+## Polar plot
+```{r}
+polarPlot(ethane, pollutant = 'ethane', x= 'wsp_ms', wd = 'wdr_deg',
+          key.header = "Mean Ethane (ppb)", key.footer = NULL)
+```
+```{r}
+# beyond 90th percentile
+ethane_90 <- ethane %>% filter(ethane > quantile(ethane, probs = 0.9))
+polarPlot(ethane_90, pollutant = 'ethane', x= 'wsp_ms', wd = 'wdr_deg',
+          key.header = "Mean Ethane (ppb)", key.footer = NULL)
+```
+
+## Diurnal boxplot
+```{r}
+# filter filter for diurnal measurements (11am - 5pm)
+ethane_diurnal <- ethane %>%
+  mutate(hour = hour(datetime_mountain),
+         wd = round(wdr_deg, -1)) %>%
+  mutate(wd = factor(wd, levels = sort(unique(wd)))) %>%
+  filter(hour(datetime_mountain) >= 11 & hour(datetime_mountain) <= 17)
+
+every_second_label <- levels(ethane_diurnal$wd)[seq(1, length(levels(ethane_diurnal$wd)), by = 2)]
+
+ggplot(ethane_diurnal, aes(x = wd, y = ethane)) +
+  geom_boxplot(fill = 'wheat1', outliers = T, size = 0.3, outlier.shape = 16) +
+  scale_x_discrete(breaks = every_second_label) +
+  coord_cartesian(ylim = c(0, 450)) +
+  scale_y_continuous(
+    limits = c(0, NA),
+    breaks = seq(0, 450, length.out = 5) ,
+    expand = expansion(mult = c(0))
+  ) +
+  labs(title = '', x = "Wind Direction (°)", y = "Ethane") +
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(size = 12),
+    # Smaller title text
+    axis.title = element_text(size = 10),
+    # Smaller axis labels
+    axis.text = element_text(size = 10),
+    # Smaller x and y tick labels
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
+
+```
 
