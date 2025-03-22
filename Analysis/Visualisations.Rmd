@@ -101,6 +101,7 @@ ethane <- hourly_data %>%
   mutate(datetime_mountain = with_tz(as.POSIXct(time_utc, tz = 'UTC', 
                                                 format = "%Y-%m-%d %H:%M:%OS"), 
                                      tzone = "America/Denver")) %>%
+  filter(date(datetime_mountain) >= '2023-05-01') %>%
   na.omit()
 ```
 
@@ -120,23 +121,18 @@ polarPlot(ethane_90, pollutant = 'ethane', x= 'wsp_ms', wd = 'wdr_deg',
 ```{r}
 # filter filter for diurnal measurements (11am - 5pm)
 ethane_diurnal <- ethane %>%
-  mutate(hour = hour(datetime_mountain),
-         wd = round(wdr_deg, -1)) %>%
-  mutate(wd = factor(wd, levels = sort(unique(wd)))) %>%
-  filter(hour(datetime_mountain) >= 11 & hour(datetime_mountain) <= 17)
+  mutate(hour = hour(datetime_mountain))
 
-every_second_label <- levels(ethane_diurnal$wd)[seq(1, length(levels(ethane_diurnal$wd)), by = 2)]
-
-ggplot(ethane_diurnal, aes(x = wd, y = ethane)) +
+ggplot(ethane_diurnal, aes(x = factor(hour), y = ethane)) +
+  stat_boxplot(geom ='errorbar') + 
   geom_boxplot(fill = 'wheat1', outliers = T, size = 0.3, outlier.shape = 16) +
-  scale_x_discrete(breaks = every_second_label) +
-  coord_cartesian(ylim = c(0, 450)) +
+  coord_cartesian(ylim = c(0, 2100)) +
   scale_y_continuous(
     limits = c(0, NA),
-    breaks = seq(0, 450, length.out = 5) ,
+    breaks = seq(0, 2100, length.out = 5) ,
     expand = expansion(mult = c(0))
   ) +
-  labs(title = '', x = "Wind Direction (°)", y = "Ethane") +
+  labs(title = '', x = "Hour of day", y = "Ethane") +
   theme_minimal() +
   theme(
     legend.position = "none",
@@ -149,5 +145,44 @@ ggplot(ethane_diurnal, aes(x = wd, y = ethane)) +
     axis.text.x = element_text(angle = 45, hjust = 1)
   )
 
+```
+
+# Pentane ratio
+```{r}
+pentane <- hourly_data %>%
+  mutate(datetime_mountain = with_tz(as.POSIXct(time_utc, tz = 'UTC', 
+                                              format = "%Y-%m-%d %H:%M:%OS"), 
+                                   tzone = "America/Denver")) %>%
+  filter(date(datetime_mountain) >= '2023-05-01') %>%
+  select(all_of(c('i-pentane', 'n-pentane', 'wdr_deg'))) %>%
+  mutate(pentane_ratio = `i-pentane`/`n-pentane`,
+         wd = round(wdr_deg, -1)) %>%
+  mutate(wd = factor(wd, levels = sort(unique(wd)))) %>%
+  na.omit()
+
+every_second_label <- levels(pentane$wd)[seq(1, length(levels(pentane$wd)), by = 2)]
+
+ggplot(pentane, aes(x = wd, y = pentane_ratio)) +
+  stat_boxplot(geom ='errorbar') + 
+  geom_boxplot(fill = 'wheat1', outliers = F, size = 0.3, outlier.shape = 16,) +
+  coord_cartesian(ylim = c(0.8, 1.5)) +
+  scale_x_discrete(breaks = every_second_label) +
+  scale_y_continuous(
+    limits = c(0.8, NA),
+    breaks = seq(0.8, 1.5, length.out = 5) ,
+    expand = expansion(mult = c(0))
+  ) +
+  labs(title = '', x = "Wind direction", y = "Pentane ratio") +
+  theme_minimal() +
+  theme(
+    legend.position = "none",
+    plot.title = element_text(size = 12),
+    # Smaller title text
+    axis.title = element_text(size = 10),
+    # Smaller axis labels
+    axis.text = element_text(size = 10),
+    # Smaller x and y tick labels
+    axis.text.x = element_text(angle = 45, hjust = 1)
+  )
 ```
 
