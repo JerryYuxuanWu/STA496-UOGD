@@ -32,7 +32,11 @@ hourly_data <- readRDS("../DataProcessing/Trailer_hourly_merge_20240905.rds")
 
 ```{r}
 # PROCEDURE STEP 1:
-hourly_data <- hourly_data %>% rename('co2' = 'co2_ppm')
+hourly_data <- hourly_data %>% rename('co2' = 'co2_ppm')  %>%
+  mutate(datetime_mountain = with_tz(as.POSIXct(time_utc, tz = 'UTC', 
+                                                format = "%Y-%m-%d %H:%M:%OS"), 
+                                     tzone = "America/Denver")) %>%
+  filter(date(datetime_mountain) >= '2023-05-01')
 
 vocs <- c("ethane", "ethene", "propane", "propene",
                                         "1_3-butadiene", "i-butane", "n-butane",
@@ -130,7 +134,7 @@ grid.arrange(get(paste0(vocs[17], '_boxplot')), get(paste0(vocs[18], '_boxplot')
 # Define LOD for each chemical
 LOD_non_voc <- c('ch4' = 0.9, 
              'co2' = 0.0433, 
-             'co' = 40,
+             'co' = 20,
              'h2s' = 0.4, 
              'so2' = 0.4,
              'nox' = 0.05, 
@@ -576,7 +580,7 @@ get_wind_plots <- function(W, y_axis_upper = rep(10, 5),
 # 
 # end_time_lsnmf_rand <- Sys.time()
 # end_time_lsnmf_rand-start_time_lsnmf_rand
-# # 18.8 minutes to run the above
+# # 19 minutes to run the above
 
 # saveRDS(lsnmf_random_less_o3,
 #         'lsnmf_random_less_o3.rds')
@@ -635,11 +639,11 @@ grid.arrange(nmfplt_1_lsnmf_random_less_o3_5c, nmfplt_2_lsnmf_random_less_o3_5c,
 
 ```{r}
 fingerprint <- get_fingerprint_plot(H_df_5c_less_o3, c(
-      'Traffic',
-      'Combustion',
-      'Oil & Gas Emissions',
-      'Flare (factor 4)',
-      'Flare (factor 5)'
+      'Component 1',
+      'Component 2',
+      'Component 3',
+      'Component 4',
+      'Component 5'
     ))
 
 fingerprint
@@ -649,7 +653,7 @@ fingerprint
 * Wind plots
 
 ```{r}
-wind_plot <- get_wind_plots(W, y_axis_upper = c(4, 2, 3.5, 3.5, 4.5))
+wind_plot <- get_wind_plots(W, y_axis_upper = c(3.5, 1.75, 3.5, 3.75, 3.5))
 
 grid.arrange(grobs = wind_plot, ncol = 3)
 ```
@@ -670,7 +674,7 @@ grid.arrange(grobs = wind_plot, ncol = 3)
 # 
 # end_time_lsnmf_nndsvd <- Sys.time()
 # end_time_lsnmf_nndsvd-start_time_lsnmf_nndsvd
-# 1.37 minutes to run the above
+# 1.34 minutes to run the above
 # # 
 # saveRDS(lsnmf_nndsvd_less_o3,
 #         'lsnmf_nndsvd_less_o3.rds')
@@ -730,11 +734,11 @@ grid.arrange(nmfplt_1_lsnmf_nndsvd_less_o3_5c, nmfplt_2_lsnmf_nndsvd_less_o3_5c,
 
 ```{r}
 fingerprint <- get_fingerprint_plot(H_df_5c_less_o3, c(
-      'Traffic',
-      'Combustion',
-      'Oil & Gas Emissions',
-      'Flare (factor 4)',
-      'Flare (factor 5)'
+      'Component 1',
+      'Component 2',
+      'Component 3',
+      'Component 4',
+      'Component 5'
     ))
 fingerprint
 #ggsave("fingerprint.png", c)
@@ -782,7 +786,7 @@ tibble(component = components,
 # 
 # end_time_kl_random <- Sys.time()
 # end_time_kl_random-start_time_kl_random
-# 14.84 minutes to run the above
+# 14.24 minutes to run the above
 
 # saveRDS(kl_random_less_o3, 'kl_random_less_o3.rds')
 
@@ -841,11 +845,11 @@ grid.arrange(nmfplt_1_kl_random_less_o3_5c, nmfplt_2_kl_random_less_o3_5c,
 
 ```{r}
 fingerprint <- get_fingerprint_plot(H_df_5c_less_o3, c(
-      'Traffic',
-      'Combustion',
-      'Oil & Gas Emissions',
-      'Flare (factor 4)',
-      'Flare (factor 5)'
+      'Component 1',
+      'Component 2',
+      'Component 3',
+      'Component 4',
+      'Component 5'
     ))
 fingerprint
 #ggsave("fingerprint.png", c)
@@ -855,13 +859,13 @@ fingerprint
 * Wind plots
 
 ```{r}
-wind_plot <- get_wind_plots(W, y_axis_upper = c(4.5, 1.8, 0.9, 4, 2))
+wind_plot <- get_wind_plots(W, y_axis_upper = c(3.5, 1, 2, 2, 4.5))
 grid.arrange(grobs = wind_plot, ncol = 3)
 ```
 
 ## KL + nndsvd
 ```{r, warning = FALSE}
-errors <- numeric(length(components) - 4)
+# errors <- numeric(length(components) - 4)
 
 # Loop over the number of components
 # for (n in components) {
@@ -946,11 +950,11 @@ grid.arrange(nmfplt_1_kl_nndsvd_less_o3_5c, nmfplt_2_kl_nndsvd_less_o3_5c,
 
 ```{r}
 fingerprint <- get_fingerprint_plot(H_df_5c_less_o3, c(
-      'Traffic',
-      'Combustion',
-      'Oil & Gas Emissions',
-      'Flare (factor 4)',
-      'Flare (factor 5)'
+      'Component 1',
+      'Component 2',
+      'Component 3',
+      'Component 4',
+      'Component 5'
     ))
 fingerprint
 #ggsave("fingerprint.png", c)
@@ -960,7 +964,7 @@ fingerprint
 * Wind plots
 
 ```{r}
-wind_plot <- get_wind_plots(W, y_axis_upper = c(0.225, 0.08, 0.18, 0.09, 0.1125))
+wind_plot <- get_wind_plots(W, y_axis_upper = c(0.225, 0.08, 0.18, 0.1, 0.1125))
 grid.arrange(grobs = wind_plot, ncol = 3)
 ```
 
@@ -1069,7 +1073,7 @@ grid.arrange(RSS_plot, WRSS_plot, KL_plot, ncol=2)
 ```
 
 
-## NMF with 5 source factors without ozone
+## LSNMF nndsvd with 5 source factors without ozone
 
 - remove ozone
 - use KL divergence loss with svd seed
@@ -1078,23 +1082,32 @@ grid.arrange(RSS_plot, WRSS_plot, KL_plot, ncol=2)
 - Calculate variance explained by each factor
 
 ```{r, message = FALSE}
-nmf_result_5c_less_o3 <- kl_nndsvd_less_o3$fit$`5`
+nmf_result_5c_less_o3 <- lsnmf_nndsvd_less_o3$fit$`5`
 
 basis_matrix_5c_less_o3 <- basis(nmf_result_5c_less_o3) #W
 coef_matrix_5c_less_o3 <- coef(nmf_result_5c_less_o3) #H
 
-# get variance explained by the factors (total residuals)
+# get variance explained by the factors (WRSS)
 reconstruct<-fitted(nmf_result_5c_less_o3)
 
-tss <- sum((normalized_matrix_less_o3 - mean(normalized_matrix_less_o3))^2)
-rss <- sum((normalized_matrix_less_o3 - reconstruct)^2)
-variance_explained <- 1 - (rss / tss)
-variance_explained
+# Traditional way of computing WRSS = sum of weight * (X - Xhat)^2
+wtss_trad <- sum(weight_matrix * (normalized_matrix_less_o3 - mean(normalized_matrix_less_o3))^2)
+wrss_trad <- sum(weight_matrix * (normalized_matrix_less_o3 - reconstruct)^2)
+variance_explained_trad <- 1 - (wrss_trad / wtss_trad)
+cat('Variance explained (Traditional WRSS): ', round(variance_explained_trad*100, 2), '%', sep = '')
+
+# How the NMF package computes WRSS = sum of 0.5 * (weight * (X - Xhat))^2
+wtss_pkg <- sum((weight_matrix * (normalized_matrix_less_o3 - mean(normalized_matrix_less_o3)))^2/2)
+wrss_pkg <- sum((weight_matrix * (normalized_matrix_less_o3 - reconstruct))^2/2)
+variance_explained_pkg <- 1 - (wrss_pkg / wtss_pkg)
+cat('Variance explained (Package WRSS): ', round(variance_explained_pkg*100, 2), '%', sep = '')
+
 
 # get variance explained by each factor separately
 # Compute variance explained by each factor
 # Initialize variance explained tracker
-variance_explained_factors <- numeric(5)
+variance_explained_trad_factors <- numeric(5)
+variance_explained_pkg_factors <- numeric(5)
 
 # Incrementally add factors and calculate variance explained
 reconstruction <- matrix(0, nrow = nrow(basis_matrix_5c_less_o3), ncol = ncol(coef_matrix_5c_less_o3))
@@ -1104,19 +1117,25 @@ for (i in 1:5) {
   reconstruction <- reconstruction + (basis_matrix_5c_less_o3[, i, drop=FALSE] %*% coef_matrix_5c_less_o3[i, , drop=FALSE])
   
   # Compute Residual Sum of Squares (RSS)
-  rss_f <- sum((normalized_matrix_less_o3 - reconstruction)^2)
+  wrss_temp_trad <- sum(weight_matrix * (normalized_matrix_less_o3 - reconstruction)^2)
+  wrss_temp_pkg <- sum((weight_matrix * (normalized_matrix_less_o3 - reconstruction))^2/2)
   
   # Compute Variance Explained by adding this factor
-  variance_explained_factors[i] <- 1 - (rss_f / tss)
+  variance_explained_trad_factors[i] <- 1 - (wrss_temp_trad / wtss_trad)
+  variance_explained_pkg_factors[i] <- 1 - (wrss_temp_pkg / wtss_pkg)
 }
 
-# Print variance explained by each factor cumulatively
-variance_explained_factors
-
-par(mfrow = c(1, 2))
-image(basis_matrix_5c_less_o3, main = "Basis Matrix (W)")
-image(coef_matrix_5c_less_o3, main = "Coefficient Matrix (H)")
-
+# Plot variance explained by each factor cumulatively
+tibble(factor = c(1:length(variance_explained_trad_factors),
+                  1:length(variance_explained_pkg_factors)),
+       var_exp = c(variance_explained_trad_factors, variance_explained_pkg_factors),
+       method = c(rep('Traditional', length(variance_explained_trad_factors)),
+                  rep('Package', length(variance_explained_pkg_factors)))) %>%
+  ggplot() +
+  geom_line(aes(x = factor, y = var_exp, color = method)) +
+  geom_point(aes(x = factor, y = var_exp, color = method)) +
+  labs(x = 'Number of factors', y = 'Variance explained (WRSS)') +
+  theme_bw()
 ```
 
 ```{r, eval=TRUE, echo = T}
