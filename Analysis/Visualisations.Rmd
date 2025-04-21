@@ -90,7 +90,7 @@ map <- leaflet() %>%
                                                      "font-size" = "14px"
                                                     )))%>%
         addScaleBar("bottomright")
-
+map
 saveWidget(map, file="djb_map.html")
 ```
 
@@ -184,5 +184,35 @@ ggplot(pentane, aes(x = wd, y = pentane_ratio)) +
     # Smaller x and y tick labels
     axis.text.x = element_text(angle = 45, hjust = 1)
   )
+```
+
+# V3.5 flare map
+```{r}
+# load in clustered data
+flare_v35 <- read_csv('../data/pb_vnf/flaring_v35_clustered.csv') 
+flare_v35 <- flare_v35 %>%
+  mutate(noise = ifelse(cluster == -1, TRUE, FALSE))
+
+flare_v35 <- flare_v35  %>%
+  st_as_sf(coords = c('easting', 'northing'), remove = F) %>%
+  st_set_crs("+proj=utm +zone=13 ellps=WGS84") %>%
+  st_transform(4326) %>%
+  mutate(lon = st_coordinates(.)[,1],
+         lat = st_coordinates(.)[,2]) %>%
+  st_drop_geometry()
+
+flare_v35_plot <- leaflet() %>%
+  addProviderTiles("Esri.WorldImagery") %>% 
+  addProviderTiles("CartoDB.PositronOnlyLabels") %>%  
+  addCircleMarkers(data = flare_v35, lng = ~lon, lat = ~lat, 
+                   stroke = T, fillColor = ~ case_when(noise == TRUE ~ '#FFD700', 
+                                                       .default = '#B22222'), radius = 2, weight = 1,
+                   group = 'Flares', col='white', fillOpacity = 0.7) %>%
+  addLegend(colors = c('#FFD700', '#B22222'), 
+            labels = c('Noise', 'Clustered'),
+            position = 'bottomleft')
+
+flare_v35_plot
+saveWidget(flare_v35_plot, file="flare_v35_map.html")
 ```
 

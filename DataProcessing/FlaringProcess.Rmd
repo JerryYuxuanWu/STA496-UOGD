@@ -13,9 +13,14 @@ library(units)
 
 ```{r}
 flaring <- readRDS("../data/loving_vnf/loving200km-vnf_230414-240901.rds")
+flaring_v35 <- readRDS("../data/pb_vnf/viirs_filtered_V35.rds")
 ```
 
 ## Filtering and Processing
+```{r}
+write_csv(flaring_v35, "../data/pb_vnf/flaring_v35.csv")
+```
+
 ```{r}
 # excluding all cooler than 1600 bb
 flaring <- flaring %>% filter(temp_bb >= 1600)

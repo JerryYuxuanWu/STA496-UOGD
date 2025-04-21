@@ -382,6 +382,18 @@ for (i in 1:dim(uncertainty_matrix)[1]) {
   }
 }
 ```
+```{r}
+# Save uncertainty matrix (entry = sigma = uncertainty)
+# uncertainty_tibble <- as_tibble(uncertainty_matrix) %>%
+#   setNames(colnames(normalized_matrix_less_o3)) %>%
+#   bind_cols(tibble(time_utc = hourly_nona$time_utc))
+# 
+# write_csv(uncertainty_tibble, 'uncertainty_matrix.csv')
+# 
+# normalized_matrix_less_o3_tibble <- as_tibble(normalized_matrix_less_o3) %>%
+#   bind_cols(tibble(time_utc = hourly_nona$time_utc))
+# write_csv(normalized_matrix_less_o3_tibble, 'normalized_matrix_less_o3.csv')
+```
 
 ```{r}
 # Convert zero uncertainties to the next smallest uncertainty of the corresponding compound
@@ -565,6 +577,147 @@ get_wind_plots <- function(W, y_axis_upper = rep(10, 5),
 ```
 
 ## LS-NMF + Random seed
+```{r}
+lsnmf_random_less_o3_1to3 <- nmf(
+  normalized_matrix_less_o3,
+  1:3,
+  method = "ls-nmf",
+  weight = weight_matrix,
+  10,
+  seed = 123456
+)
+plot(lsnmf_random_less_o3_1to3)
+```
+```{r}
+onecomp <- lsnmf_random_less_o3_1to3$fit$`1`
+reconstruct<-fitted(onecomp)
+
+# Traditional way of computing WRSS = sum of weight * (X - Xhat)^2
+wtss_trad_1 <- sum(weight_matrix * (normalized_matrix_less_o3 - mean(normalized_matrix_less_o3))^2)
+wrss_trad_1 <- sum(weight_matrix * (normalized_matrix_less_o3 - reconstruct)^2)
+variance_explained_trad_1 <- 1 - (wrss_trad_1 / wtss_trad_1)
+variance_explained_trad_1
+
+basis_matrix_5c_less_o3 <- basis(onecomp) #W
+coef_matrix_5c_less_o3 <- coef(onecomp) #H
+
+variance_explained_trad_factors <- numeric(1)
+variance_explained_pkg_factors <- numeric(1)
+
+reconstruction <- matrix(0, nrow = nrow(basis_matrix_5c_less_o3), ncol = ncol(coef_matrix_5c_less_o3))
+
+# Add the i-th factor to the reconstruction
+reconstruction <- reconstruction + (basis_matrix_5c_less_o3[, 1, drop=FALSE] %*% coef_matrix_5c_less_o3[1, , drop=FALSE])
+
+# Compute Residual Sum of Squares (RSS)
+wrss_temp_trad <- sum(weight_matrix * (normalized_matrix_less_o3 - reconstruction)^2)
+wrss_temp_pkg <- sum((weight_matrix * (normalized_matrix_less_o3 - reconstruction))^2/2)
+
+# Compute Variance Explained by adding this factor
+variance_explained_trad_factors[1] <- 1 - (wrss_temp_trad / wtss_trad)
+variance_explained_pkg_factors[1] <- 1 - (wrss_temp_pkg / wtss_pkg)
+
+# Plot variance explained by each factor cumulatively
+tibble(factor = c(1:length(variance_explained_trad_factors),
+                  1:length(variance_explained_pkg_factors)),
+       var_exp = c(variance_explained_trad_factors, variance_explained_pkg_factors),
+       method = c(rep('Traditional', length(variance_explained_trad_factors)),
+                  rep('Package', length(variance_explained_pkg_factors)))) %>%
+  ggplot() +
+  geom_line(aes(x = factor, y = var_exp, color = method)) +
+  geom_point(aes(x = factor, y = var_exp, color = method)) +
+  labs(x = 'Number of factors', y = 'Variance explained (WRSS)') +
+  theme_bw()
+```
+```{r}
+twocomp <- lsnmf_random_less_o3_1to3$fit$`2`
+reconstruct<-fitted(twocomp)
+
+# Traditional way of computing WRSS = sum of weight * (X - Xhat)^2
+wtss_trad_2 <- sum(weight_matrix * (normalized_matrix_less_o3 - mean(normalized_matrix_less_o3))^2)
+wrss_trad_2 <- sum(weight_matrix * (normalized_matrix_less_o3 - reconstruct)^2)
+variance_explained_trad_2 <- 1 - (wrss_trad_2 / wtss_trad_2)
+variance_explained_trad_2
+
+basis_matrix_5c_less_o3 <- basis(twocomp) #W
+coef_matrix_5c_less_o3 <- coef(twocomp) #H
+# Incrementally add factors and calculate variance explained
+
+variance_explained_trad_factors <- numeric(2)
+variance_explained_pkg_factors <- numeric(2)
+
+reconstruction <- matrix(0, nrow = nrow(basis_matrix_5c_less_o3), ncol = ncol(coef_matrix_5c_less_o3))
+
+for (i in 1:2) {
+  # Add the i-th factor to the reconstruction
+  reconstruction <- reconstruction + (basis_matrix_5c_less_o3[, i, drop=FALSE] %*% coef_matrix_5c_less_o3[i, , drop=FALSE])
+  
+  # Compute Residual Sum of Squares (RSS)
+  wrss_temp_trad <- sum(weight_matrix * (normalized_matrix_less_o3 - reconstruction)^2)
+  wrss_temp_pkg <- sum((weight_matrix * (normalized_matrix_less_o3 - reconstruction))^2/2)
+  
+  # Compute Variance Explained by adding this factor
+  variance_explained_trad_factors[i] <- 1 - (wrss_temp_trad / wtss_trad)
+  variance_explained_pkg_factors[i] <- 1 - (wrss_temp_pkg / wtss_pkg)
+}
+
+# Plot variance explained by each factor cumulatively
+tibble(factor = c(1:length(variance_explained_trad_factors),
+                  1:length(variance_explained_pkg_factors)),
+       var_exp = c(variance_explained_trad_factors, variance_explained_pkg_factors),
+       method = c(rep('Traditional', length(variance_explained_trad_factors)),
+                  rep('Package', length(variance_explained_pkg_factors)))) %>%
+  ggplot() +
+  geom_line(aes(x = factor, y = var_exp, color = method)) +
+  geom_point(aes(x = factor, y = var_exp, color = method)) +
+  labs(x = 'Number of factors', y = 'Variance explained (WRSS)') +
+  theme_bw()
+```
+```{r}
+threecomp <- lsnmf_random_less_o3_1to3$fit$`3`
+reconstruct<-fitted(threecomp)
+
+# Traditional way of computing WRSS = sum of weight * (X - Xhat)^2
+wtss_trad_3 <- sum(weight_matrix * (normalized_matrix_less_o3 - mean(normalized_matrix_less_o3))^2)
+wrss_trad_3 <- sum(weight_matrix * (normalized_matrix_less_o3 - reconstruct)^2)
+variance_explained_trad_3 <- 1 - (wrss_trad_3 / wtss_trad_3)
+variance_explained_trad_3
+
+basis_matrix_5c_less_o3 <- basis(threecomp) #W
+coef_matrix_5c_less_o3 <- coef(threecomp) #H
+# Incrementally add factors and calculate variance explained
+
+variance_explained_trad_factors <- numeric(3)
+variance_explained_pkg_factors <- numeric(3)
+
+reconstruction <- matrix(0, nrow = nrow(basis_matrix_5c_less_o3), ncol = ncol(coef_matrix_5c_less_o3))
+
+for (i in 1:3) {
+  # Add the i-th factor to the reconstruction
+  reconstruction <- reconstruction + (basis_matrix_5c_less_o3[, i, drop=FALSE] %*% coef_matrix_5c_less_o3[i, , drop=FALSE])
+  
+  # Compute Residual Sum of Squares (RSS)
+  wrss_temp_trad <- sum(weight_matrix * (normalized_matrix_less_o3 - reconstruction)^2)
+  wrss_temp_pkg <- sum((weight_matrix * (normalized_matrix_less_o3 - reconstruction))^2/2)
+  
+  # Compute Variance Explained by adding this factor
+  variance_explained_trad_factors[i] <- 1 - (wrss_temp_trad / wtss_trad)
+  variance_explained_pkg_factors[i] <- 1 - (wrss_temp_pkg / wtss_pkg)
+}
+
+# Plot variance explained by each factor cumulatively
+tibble(factor = c(1:length(variance_explained_trad_factors),
+                  1:length(variance_explained_pkg_factors)),
+       var_exp = c(variance_explained_trad_factors, variance_explained_pkg_factors),
+       method = c(rep('Traditional', length(variance_explained_trad_factors)),
+                  rep('Package', length(variance_explained_pkg_factors)))) %>%
+  ggplot() +
+  geom_line(aes(x = factor, y = var_exp, color = method)) +
+  geom_point(aes(x = factor, y = var_exp, color = method)) +
+  labs(x = 'Number of factors', y = 'Variance explained (WRSS)') +
+  theme_bw()
+```
+
 ```{r}
 # for each rank, run 30 models and find best one
 # start_time_lsnmf_rand <- Sys.time()
@@ -1082,7 +1235,7 @@ grid.arrange(RSS_plot, WRSS_plot, KL_plot, ncol=2)
 - Calculate variance explained by each factor
 
 ```{r, message = FALSE}
-nmf_result_5c_less_o3 <- lsnmf_nndsvd_less_o3$fit$`5`
+nmf_result_5c_less_o3 <- lsnmf_random_less_o3$fit$`5`
 
 basis_matrix_5c_less_o3 <- basis(nmf_result_5c_less_o3) #W
 coef_matrix_5c_less_o3 <- coef(nmf_result_5c_less_o3) #H
@@ -1091,17 +1244,21 @@ coef_matrix_5c_less_o3 <- coef(nmf_result_5c_less_o3) #H
 reconstruct<-fitted(nmf_result_5c_less_o3)
 
 # Traditional way of computing WRSS = sum of weight * (X - Xhat)^2
-wtss_trad <- sum(weight_matrix * (normalized_matrix_less_o3 - mean(normalized_matrix_less_o3))^2)
-wrss_trad <- sum(weight_matrix * (normalized_matrix_less_o3 - reconstruct)^2)
+wtss_trad <- sum(weight_matrix^2 * (normalized_matrix_less_o3 - mean(normalized_matrix_less_o3))^2)
+wrss_trad <- sum(weight_matrix^2 * (normalized_matrix_less_o3 - reconstruct)^2)
 variance_explained_trad <- 1 - (wrss_trad / wtss_trad)
 cat('Variance explained (Traditional WRSS): ', round(variance_explained_trad*100, 2), '%', sep = '')
 
 # How the NMF package computes WRSS = sum of 0.5 * (weight * (X - Xhat))^2
-wtss_pkg <- sum((weight_matrix * (normalized_matrix_less_o3 - mean(normalized_matrix_less_o3)))^2/2)
-wrss_pkg <- sum((weight_matrix * (normalized_matrix_less_o3 - reconstruct))^2/2)
+# Weight here is sigma not sigma^2
+wtss_pkg <- sum((weight_matrix * (normalized_matrix_less_o3 - mean(normalized_matrix_less_o3)))^2)/2
+wrss_pkg <- sum((weight_matrix * (normalized_matrix_less_o3 - reconstruct))^2)/2
 variance_explained_pkg <- 1 - (wrss_pkg / wtss_pkg)
 cat('Variance explained (Package WRSS): ', round(variance_explained_pkg*100, 2), '%', sep = '')
 
+# How EPANMF computes wrss (q_loss or Qtrue) = (weight * (residual))^2
+# Same as nmf but without taking half
+wtss_epa <- sum((weight_matrix * (normalized_matrix_less_o3 - mean(normalized_matrix_less_o3)))^2)
 
 # get variance explained by each factor separately
 # Compute variance explained by each factor
@@ -1117,8 +1274,8 @@ for (i in 1:5) {
   reconstruction <- reconstruction + (basis_matrix_5c_less_o3[, i, drop=FALSE] %*% coef_matrix_5c_less_o3[i, , drop=FALSE])
   
   # Compute Residual Sum of Squares (RSS)
-  wrss_temp_trad <- sum(weight_matrix * (normalized_matrix_less_o3 - reconstruction)^2)
-  wrss_temp_pkg <- sum((weight_matrix * (normalized_matrix_less_o3 - reconstruction))^2/2)
+  wrss_temp_trad <- sum(weight_matrix^2 * (normalized_matrix_less_o3 - reconstruction)^2)
+  wrss_temp_pkg <- sum((weight_matrix * (normalized_matrix_less_o3 - reconstruction))^2)/2
   
   # Compute Variance Explained by adding this factor
   variance_explained_trad_factors[i] <- 1 - (wrss_temp_trad / wtss_trad)
