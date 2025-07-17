@@ -1,0 +1,332 @@
+---
+title: "Flares and pollutants - data prep"
+author: "Meredith Franklin"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(geosphere)
+library(circular)
+library(lwgeom)
+library(sf)
+library(units)
+```
+
+## Data
+- gather hourly (VOC matched) trailer data, subset to components related to flaring
+- compute daily and nightly averages to match with flaring data
+
+#### Trailer data
+```{r}
+trailer_hourly <- readRDS('../../DataProcessing/TrailerProcessed-20240601.rds')
+trailer_hourly$radioactivity_ratio<-trailer_hourly$radon_B/trailer_hourly$rd_particle_B
+```
+
+
+```{r}
+columns <- c('time_utc', 'ch4', 'co', 'co2_ppm', 'h2s','so2','nox', 'benzene', 'ethene', 
+             'ethane', "rd_particle_B", "radon_B", 'radioactivity_ratio','wdr_deg', 'wsp_ms')
+
+trailer_hourly_clean <- trailer_hourly %>% 
+  select(all_of(columns)) %>%
+  mutate(datetime_utc = as.POSIXct(time_utc, tz = 'UTC', format = "%Y-%m-%d %H:%M:%OS"),
+         datetime_mountain = with_tz(as.POSIXct(time_utc, tz = 'UTC', format = "%Y-%m-%d %H:%M:%OS"), 
+                                     tzone = "America/Denver")) %>%
+  mutate(day_utc = as.Date(format(datetime_utc, '%Y-%m-%d')),
+         day_mountain = as.Date(format(datetime_mountain, '%Y-%m-%d')),
+         co2 = co2_ppm,
+         total_radioactivity = rd_particle_B + radon_B) 
+```
+
+
+```{r warning=FALSE, message=FALSE}
+# Compute daily average
+trailer_daily <- trailer_hourly_clean %>% 
+  select(-c(time_utc, day_utc, datetime_utc, datetime_mountain)) %>% 
+  group_by(day_mountain) %>% 
+  summarise(across(!wdr_deg, ~mean(.x, na.rm=T)),
+            wdr_deg = as.numeric(mean(circular(wdr_deg, units = "degrees"), na.rm=T))) %>%
+  mutate(wdr_deg = if_else(wdr_deg < 0, wdr_deg+360, wdr_deg))
+
+# Compute nightly average measurement from 0am to 6am
+trailer_night_avg <- trailer_hourly_clean %>% 
+  filter(hour(ymd_hms(datetime_mountain)) <= 6) %>%
+  select(-c(time_utc, day_utc, datetime_utc, datetime_mountain)) %>% 
+  group_by(day_mountain) %>% 
+  summarise(across(everything(), ~mean(.x, na.rm=T))) %>%
+  mutate(wdr_deg = if_else(wdr_deg < 0, wdr_deg+360, wdr_deg))
+```
+
+
+- Jerry: Need to add wind direction bins
+- SE: 129–194° 
+- SW: 212–258° 
+- NW: 292–26° 
+
+- Also add wind direction bins in the following:
+Direction
+Range (°)
+N 337.5–360 & 0–22.5
+NE 22.5–67.5
+E 67.5–112.5
+SE 112.5–157.5
+S 157.5–202.5
+SW 202.5–247.5
+W 247.5–292.5
+NW 292.5–337.5
+
+Note from Jerry: I moved this part below the chunk above since we want bins for the averages
+```{r}
+# Since these 3 bins do not cover the entire 360 degrees,
+# Create 3 binary variables for each bin, use these as predictors in regression 
+# Baseline will be the complement (Neither of 3)
+trailer_daily  <- trailer_daily %>%
+  mutate(wind_SE = ifelse(between(wdr_deg, 129, 194), 1, 0),
+         wind_SW = ifelse(between(wdr_deg, 212, 258), 1, 0),
+         wind_NW = ifelse(between(wdr_deg, 292, 360) | 
+                            between(wdr_deg, 0, 26), 1, 0))
+
+trailer_night_avg  <- trailer_night_avg %>%
+  mutate(wind_SE = ifelse(between(wdr_deg, 129, 194), 1, 0),
+         wind_SW = ifelse(between(wdr_deg, 212, 258), 1, 0),
+         wind_NW = ifelse(between(wdr_deg, 292, 360) | 
+                            between(wdr_deg, 0, 26), 1, 0))
+```
+
+```{r}
+# bin code sample, but edit as needed
+bin_wind_dir <- function(deg) {
+ cuts <- c(0, 22.5, 67.5, 112.5, 157.5, 202.5, 247.5, 292.5, 337.5, 360)
+ labels <- c("N", "NE", "E", "SE", "S", "SW", "W", "NW", "N")
+ cut(deg %% 360, breaks = cuts, labels = labels, include.lowest = TRUE, right = FALSE)
+}
+trailer_daily$wind_bin <- bin_wind_dir(trailer_daily$wdr_deg)
+trailer_night_avg$wind_bin <- bin_wind_dir(trailer_night_avg$wdr_deg)
+```
+
+#### Well Data
+
+- load processed well production data (monthly production values)
+- the distance to the wells is computed with inverse distance 
+
+
+```{r}
+Wells <- readRDS('../../DataProcessing/WellsProcessed20240601.rds')
+```
+
+```{r}
+wells_monthly <- Wells %>% group_by(substr(prod_date, 1, 7)) %>% 
+  mutate(inv_dist_well = ifelse(1 / distToLovi < 0.01, 0, 1 / distToLovi)) %>%
+  summarize(distToLovi_wells = mean(distToLovi),
+            inv_dist_wells = mean(inv_dist_well),
+            weighted_count_wells = sum(inv_dist_wells) * 100,
+            weighted_monthly_oil = sum(monthly_oil * inv_dist_well),
+            weighted_monthly_gas = sum(monthly_gas * inv_dist_well),
+            monthly_oil = sum(monthly_oil),
+            monthly_gas = sum(monthly_gas)) %>% 
+  rename(Month = `substr(prod_date, 1, 7)`)
+#wells_monthly
+```
+
+#### Flare Data
+
+- import processed v3.5 flaring data (NOTE to Jerry 7/16/2025: there is going to be new predicted methane_eq soon)
+- remove noise -1 cluster
+- calculate distance of flares to trailer
+- subset within 50 km (smaller buffers done later)
+
+
+```{r}
+#flaring2 <- readRDS('FlaringProcessed.rds')
+
+flaring <-read.csv("../../data/pb_vnf/flaring_v35_clustered.csv")
+
+flaring <- flaring %>%
+  filter(cluster != -1) %>%
+ st_as_sf(coords = c("easting", "northing"), crs = 32613)  # EPSG:32613 = UTM zone 13N, WGS84
+
+flaring %>%
+  summarize(non_missing_temp_bb = sum(!is.na(methane_eq)))
+
+flaring_ll <- st_transform(flaring, crs = 4326)
+flaring_ll <- flaring_ll %>%
+  mutate(
+    lon = st_coordinates(.)[, 1],
+    lat = st_coordinates(.)[, 2]
+  )
+
+flaring <- flaring_ll %>%
+  st_transform(flaring_ll, crs = 32613) %>%
+  mutate(date = as.Date(date))
+```
+
+```{r}
+loving_lonlat <- c(-104.1089, 32.2961) 
+loving_lonlat_sf <- st_sfc(st_point(loving_lonlat), crs = 4326) %>%
+  st_transform(loving_lonlat_sf, crs=32613)
+
+#flaring2 <- flaring2 %>%
+#  st_as_sf(coords = c('lon', 'lat'), remove = F) %>%
+#  st_set_crs(4326) %>%
+#  st_transform(flaring2,crs=32613)
+
+flaring_loving_50 <- flaring %>% 
+  mutate(distToLovi_flare = c(drop_units(st_distance(flaring, loving_lonlat_sf)))/1000) %>% 
+  st_drop_geometry() %>%
+  select(c("date", "distToLovi_flare", "temp_bb", "rhi", "esf_bb","methane_eq", "area_bb", "lon", "lat")) %>% #
+  filter(distToLovi_flare <= 50)
+```
+
+#### Create daily flare data
+
+- create counts of flares by buffer
+- take mean by date of the VNF params including predicted methane_eq
+
+```{r}
+# summarize a daily count flaring
+flaring_daily <- flaring_loving_50 %>% 
+  mutate(inv_dist = ifelse(1 / distToLovi_flare < 0.01, 0, 1 / distToLovi_flare)) %>%
+  filter(distToLovi_flare <= 100) %>% 
+  group_by(date) %>% 
+  summarise(temp_bb = mean(temp_bb),
+            closest.flare = min(distToLovi_flare),
+            distToLovi_flare_mean = mean(distToLovi_flare, na.rm=T),
+            inv_dist = mean(inv_dist),
+            weighted.count = sum(inv_dist) * 100,
+            rhi = mean(rhi),
+            esf_bb = mean(esf_bb),
+            n_flare_50 = n(),
+            n_flare_30 = coalesce(sum(distToLovi_flare <= 30), 0),
+            n_flare_20 = coalesce(sum(distToLovi_flare <= 20), 0),
+            n_flare_10 = coalesce(sum(distToLovi_flare <= 10), 0),
+            n_flare_5 = coalesce(sum(distToLovi_flare <= 5), 0),
+            #V35_methane_eq = mean(v35_methane_eq, na.rm=T)) %>%
+            methane_eq = median(methane_eq, na.rm=T))%>%
+            #methane_eq_impute = median(methane_eq_impute, na.rm=T),
+            #methane_eq_gapfill = median(methane_eq_gapfill, na.rm=T)
+  rename(distToLovi_flare = distToLovi_flare_mean)
+```
+
+```{r}
+#unique nights per buffer
+flaring_daily %>%
+    filter(n_flare_50 != 0) %>%
+    summarise(unique_days = n_distinct(as.Date(date)))
+#num flares per buffer
+sum(flaring_daily$n_flare_50)
+sum(flaring_daily$n_flare_30)
+sum(flaring_daily$n_flare_20)
+sum(flaring_daily$n_flare_10)
+sum(flaring_daily$n_flare_5)
+
+```
+
+```{r}
+# Compute flare angle
+angles <- tibble(st_sfc(st_point(loving_lonlat), crs = 4326), 
+                 flaring_loving_50[,c('lon', 'lat')] %>% 
+                   st_as_sf(coords = c('lon', 'lat')) %>% 
+                   st_set_crs(4326)) %>%
+                pivot_longer(cols = everything()) %>% 
+                pull(value) %>% # extract coordinates only
+                st_geod_azimuth() %>%
+                set_units('degrees') %>% # convert to degrees
+                drop_units()
+angles <- angles[c(T, F)] # keep only odd index, valid pairs
+angles <- if_else(angles < 0, angles + 360, angles)
+flaring_loving_50$angle <- angles
+```
+
+#### NMF data
+
+- merge in result from NMF 
+- create hourly then daytime and nighttime averages
+
+```{r}
+nmf_data <- readRDS('../../Model/result_rfiles/normalized_hourly_data_5c_less_o3.rds')
+#names(nmf_data)
+```
+
+
+```{r}
+nmf_factor_hourly <- nmf_data %>%
+  select(time_utc, Factor1, Factor2, Factor3, Factor4, Factor5) %>%
+  mutate(datetime_mountain = with_tz(as.POSIXct(time_utc, tz = 'UTC', format = "%Y-%m-%d %H:%M:%OS"), 
+                                     tzone = "America/Denver")) %>%
+  mutate(day_mountain = as.Date(format(datetime_mountain, '%Y-%m-%d'))) %>%
+  select(-time_utc) %>%
+  filter(if_all(everything(), ~!is.na(.)))
+```
+
+```{r}
+nmf_factor_day <- nmf_factor_hourly %>% 
+  select(-datetime_mountain) %>%
+  group_by(day_mountain) %>% 
+  summarise(across(everything(), ~mean(.x, na.rm=T))) 
+
+nmf_factor_night <- nmf_factor_hourly %>% 
+  filter(hour(ymd_hms(datetime_mountain)) <= 6) %>%
+  group_by(day_mountain) %>% 
+  summarise(across(everything(), ~mean(.x, na.rm=T))) %>%
+  select(-datetime_mountain)
+```
+
+
+#### Merge full dataset
+- merge all components
+- create 5,10,20,30,50 km buffers
+
+```{r}
+# buffers
+radius <- c(5, 10, 20, 30, 50)
+
+full_merged <- trailer_daily %>%
+  left_join(trailer_night_avg, join_by(day_mountain), 
+              suffix = c('.day', '.night')) %>%
+  left_join(flaring_daily, join_by(day_mountain==date)) %>%
+  mutate(yearmonth = format(day_mountain, '%Y-%m')) %>%
+  left_join(wells_monthly, join_by(yearmonth == Month)) %>%
+  left_join(nmf_factor_day, join_by(day_mountain)) %>%
+  left_join(nmf_factor_night, join_by(day_mountain), 
+              suffix = c('.day', '.night'))
+
+# Add the flare downwind variables
+
+for (r in radius) {
+  
+  temp <- flaring_loving_50 %>%
+    filter(distToLovi_flare <= r)
+    
+  new_colnames <- paste0(c('flare_wd_day_', 'flare_wd_night_', 'methane_eq_'), r)
+  
+  flare_is_from_wd <- temp %>% 
+    left_join(trailer_daily, join_by(date==day_mountain)) %>%
+    left_join(trailer_night_avg, join_by(date==day_mountain), 
+              suffix = c('.day', '.night')) %>%
+  group_by(date) %>%
+  summarise(flare_wd_day = sum(abs(angle - wdr_deg.day) <= 30, na.rm=T),
+            flare_wd_night = sum(abs(angle - wdr_deg.night) <= 30, na.rm=T),
+            methane_eq = mean(methane_eq, na.rm=T))%>%
+            #methane_eq_gapfill = mean(methane_eq_gapfill, na.rm=T),
+            #methane_eq_impute = mean(methane_eq_impute, na.rm=T)) 
+  rename(setNames(c('flare_wd_day', 'flare_wd_night', 'methane_eq'), new_colnames))
+  
+full_merged <- full_merged %>%
+  left_join(flare_is_from_wd, join_by(day_mountain == date)) %>%
+  mutate(across(all_of(new_colnames), ~ coalesce(., 0)))
+}
+```
+
+- From here, use `full_merged` for models
+- Filter to May 1, 2023 through May 31, 2024 for final analysis
+
+```{r}
+full_merged <- full_merged %>%
+  filter(day_mountain >= as.Date("2023-05-01"))
+
+#write.csv(full_merged, "/Users/meredith/Library/CloudStorage/GoogleDrive-mereditf@usc.edu/Shared drives/HEI Energy/audit/final report/Table 6-Figure 49/table6_new.csv", row.names=FALSE)
+write.csv(full_merged, "table6_new.csv", row.names=FALSE)
+```

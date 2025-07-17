@@ -69,6 +69,34 @@ wells_monthly <- Wells %>% group_by(substr(prod_date, 1, 7)) %>%
             monthly_oil = sum(monthly_oil),
             monthly_gas = sum(monthly_gas)) %>% 
   rename(Month = `substr(prod_date, 1, 7)`)
+
+wells_monthly <- Wells %>% group_by(substr(prod_date, 1, 7)) %>%
+  mutate(inv_dist_well = ifelse(1 / distToLovi < 0.01, 0, 1 / distToLovi)) %>%
+  summarize(distToLovi_wells = mean(distToLovi),
+            inv_dist_wells = mean(inv_dist_well),
+            weighted_count_wells = sum(inv_dist_wells) * 100,
+            weighted_monthly_oil = sum(monthly_oil * inv_dist_well),
+            weighted_monthly_gas = sum(monthly_gas * inv_dist_well),
+            monthly_oil = sum(monthly_oil),
+            monthly_gas = sum(monthly_gas)) %>%
+  rename(Month = `substr(prod_date, 1, 7)`)
+
+wells_monthly <- Wells %>%
+  ungroup() %>%
+  mutate(
+    Month = substr(prod_date, 1, 7),
+    inv_dist_well = ifelse(1 / distToLovi < 0.01, 0, 1 / distToLovi)
+  ) %>%
+  summarize(
+    .by = Month,
+    distToLovi_wells = mean(distToLovi, na.rm = TRUE),
+    inv_dist_wells = mean(inv_dist_well, na.rm = TRUE),
+    weighted_count_wells = sum(inv_dist_well, na.rm = TRUE) * 100,
+    weighted_monthly_oil = sum(monthly_oil * inv_dist_well, na.rm = TRUE),
+    weighted_monthly_gas = sum(monthly_gas * inv_dist_well, na.rm = TRUE),
+    monthly_oil = sum(monthly_oil, na.rm = TRUE),
+    monthly_gas = sum(monthly_gas, na.rm = TRUE)
+  )
 ```
 
 

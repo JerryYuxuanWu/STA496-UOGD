@@ -1,0 +1,220 @@
+---
+title: "Table 6"
+author: "Meredith Franklin, Jerry"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(geosphere)
+library(circular)
+library(lwgeom)
+library(sf)
+library(units)
+library(ggcorrplot)
+library(kableExtra)
+# set working directory to file location, this is table from flare_trailer_data_prep.Rmd
+full_merged<-read.csv("table6_new.csv")
+```
+
+```{r}
+# Variables for the model
+# 11 am - 5pm (for other analyses, not VIIRS)
+# satellite overpass for night
+
+response <- c('ch4', 'benzene', 'co', 'co2', 'nox', 'h2s','so2', 
+              'ethane', 'ethene', 'total_radioactivity', 
+              'Factor1', 'Factor2', 'Factor3', 'Factor4', 'Factor5')
+
+predictors_fixed <- c('wsp_ms.night', 'weighted_monthly_oil', 
+                      'weighted_monthly_gas')
+
+wind_bins <- c('SE', 'SW', 'NW')
+
+wind_bins_list <- unlist(
+  lapply(1:length(wind_bins), function(k) combn(wind_bins, k, simplify = FALSE)), 
+  recursive = FALSE
+)
+
+wind_bins_list <- append(wind_bins_list, 'bin')
+
+distances <- c(5,10,20,30,50)
+
+
+compound_flare_lm_result <- tibble(Compound = character(),
+                                   Radius = numeric(),
+                                   'Wind Direction' = character(),
+                                   'Adj R-sq' = numeric(),
+                                   'df' = numeric(),
+                                   Significant_Variables = character())
+
+for (trailer_compound in response) {
+  for (distance in distances) {
+    for (wind_bins in wind_bins_list) {
+      predictors_wind_dir_var_temp <- paste(paste0('wind_', wind_bins, '.night'), collapse = '+')
+      predictors_dist_var_temp <- paste0('n_flare', paste0('_', distance))
+      formula_feature_str <- paste(
+        c(
+          predictors_fixed,
+          predictors_wind_dir_var_temp,
+          predictors_dist_var_temp
+        ),
+        collapse = ' + '
+      )
+      formula_str <- paste(paste0(trailer_compound, '.night'),
+                           formula_feature_str,
+                           sep = ' ~ ')
+      formula <- as.formula(formula_str)
+      
+      model <- lm(formula, data = full_merged)
+      assign(paste0(
+        trailer_compound,
+        '_count_',
+        distance,
+        'km_wind',
+        paste0(wind_bins, collapse = '')
+      ),
+      model)
+      summary <- summary(model)
+      
+      # Extract significant variables (p < 0.05)
+      coefs <- summary$coefficients
+      significant_vars <- rownames(coefs)[coefs[, 4] <= 0.05]
+      significant_vars_str <- paste(significant_vars, collapse = ', ')
+      
+      compound_flare_lm_result <- compound_flare_lm_result %>%
+        add_row(
+          Compound = trailer_compound,
+          Radius = distance,
+          'Wind Direction' = paste(wind_bins, collapse = ','),
+          'Adj R-sq' = round(summary$adj.r.squared, 3),
+          'df' = summary$df[2],
+          Significant_Variables = significant_vars_str
+        )
+    }
+  }
+}
+
+```
+
+
+```{r}
+compound_flare_lm_result %>%
+  filter(`Wind Direction` != 'bin') %>%
+  select(Compound, Radius, `Wind Direction`,  `Adj R-sq`, df, Significant_Variables) %>%
+  kable("html", caption = "Full Regression Results") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                full_width = FALSE,
+                position = "left")
+
+
+compound_flare_lm_result %>%
+  filter(`Wind Direction` != 'bin') %>%
+  select(Compound, Radius, `Wind Direction`, `Adj R-sq`, Significant_Variables) %>%
+  write.csv("full_regression_results_with_methane_eq_3windbins.csv", row.names = FALSE)
+
+```
+
+```{r}
+compound_flare_lm_result %>%
+  filter(`Wind Direction` == 'bin') %>%
+  select(Compound, Radius, `Adj R-sq`, df, Significant_Variables) %>%
+  kable("html", caption = "Full Regression Results") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                full_width = FALSE,
+                position = "left")
+
+
+compound_flare_lm_result %>%
+  filter(`Wind Direction` == 'bin') %>%
+  select(Compound, Radius, `Adj R-sq`, Significant_Variables) %>%
+  write.csv("full_regression_results_with_methane_eq_fullwindbins.csv", row.names = FALSE)
+```
+
+```{r}
+filtered_result_3windbins <- compound_flare_lm_result %>%
+  filter(`Wind Direction` != 'bin') %>%
+  filter(str_detect(Significant_Variables, "flare|methane_eq"))%>%
+  mutate(Significant_Variables = str_remove_all(Significant_Variables, "\\(Intercept\\),")) %>%
+  mutate(Significant_Variables = str_replace_all(Significant_Variables, "\\s*\\+\\s*", " + ")) %>%
+  mutate(Significant_Variables = str_replace(Significant_Variables, "^\\s*\\+\\s*", "")) %>%
+  mutate(Significant_Variables = str_trim(Significant_Variables))
+
+filtered_result_3windbins %>%
+  select(Compound, Radius, `Wind Direction`, `Adj R-sq`, Significant_Variables) %>%
+  write.csv("regression_results_with_flaring_counts_3windbins.csv", row.names = FALSE)
+
+filtered_result_3windbins %>%
+  select(Compound, Radius, `Wind Direction`, `Adj R-sq`, Significant_Variables) %>%
+  kable("html", caption = "Regression Results with Flaring") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                full_width = FALSE,
+                position = "left")
+```
+
+```{r}
+filtered_result_fullwindbins <- compound_flare_lm_result %>%
+  filter(`Wind Direction` == 'bin') %>%
+  filter(str_detect(Significant_Variables, "flare|methane_eq"))%>%
+  mutate(Significant_Variables = str_remove_all(Significant_Variables, "\\(Intercept\\),")) %>%
+  mutate(Significant_Variables = str_replace_all(Significant_Variables, "\\s*\\+\\s*", " + ")) %>%
+  mutate(Significant_Variables = str_replace(Significant_Variables, "^\\s*\\+\\s*", "")) %>%
+  mutate(Significant_Variables = str_trim(Significant_Variables))
+
+filtered_result_fullwindbins %>%
+  select(Compound, Radius, `Adj R-sq`, Significant_Variables) %>%
+  write.csv("regression_results_with_flaring_counts_fullwindbins.csv", row.names = FALSE)
+
+filtered_result_fullwindbins %>%
+  select(Compound, Radius, `Adj R-sq`, Significant_Variables) %>%
+  kable("html", caption = "Regression Results with Flaring") %>%
+  kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"),
+                full_width = FALSE,
+                position = "left")
+```
+
+
+```{r}
+
+cor_data <- full_merged %>% select('ch4.night', 'benzene.night', 'co.night', 'co2.night', 'h2s.night','so2.night','nox.night', 'ethane.night', 'ethene.night', 'total_radioactivity.night', 'Factor1.night', 'Factor2.night', 'Factor3.night', 'Factor4.night', 'Factor5.night', "n_flare_50","n_flare_30","n_flare_20", "n_flare_10","n_flare_5","methane_eq_50","methane_eq_30","methane_eq_20", "methane_eq_10","methane_eq_5")
+
+var_names <- c("ch4.night" = "CH4", "benzene.night"="Benzene", "co.night" = "CO", "co2.night" = "CO2", "h2s.night"="H2S","so2.night"="SO2",'nox.night'="NOx", 'ethane.night'= "Ethane", 'ethene.night'="Ethene", 'total_radioactivity.night'="Radioactivity",'Factor1.night'="Factor 1", 'Factor2.night'="Factor 2", 'Factor3.night'="Factor 3", 'Factor4.night'="Factor 4", 'Factor5.night'="Factor 5", "n_flare_50","n_flare_30","n_flare_20", "n_flare_10","n_flare_5", "methane_eq_50","methane_eq_30","methane_eq_20", "methane_eq_10","methane_eq_5")
+
+# Custom order (subset or reordered var_names)
+custom_order <- c("methane_eq_5", "methane_eq_10", "methane_eq_20", "methane_eq_30", "methane_eq_50",
+                  "n_flare_5", "n_flare_10", "n_flare_20", "n_flare_30", "n_flare_50",
+                  "Factor 5", "Factor 4","Factor 3","Factor 2","Factor 1",
+                  "Radioactivity", "H2S","SO2","Ethene","Ethane","NOx","CO2","CO","Benzene","CH4")
+
+cor_matrix <- cor(cor_data, use = "complete.obs")
+
+# display names
+colnames(cor_matrix) <- var_names
+rownames(cor_matrix) <- var_names
+
+# reorder
+cor_matrix <- cor_matrix[rev(custom_order), rev(custom_order)]
+
+p <- ggcorrplot(cor_matrix,
+                method = "square",
+                type = "full",
+                lab = TRUE,
+                lab_size = 1.5,
+                colors = c("#245A68", "#4692A1", "tomato"), 
+                title = "",
+                outline.color = "lightgray",
+                hc.order = FALSE) +
+  theme(
+    axis.text.x = element_text(size = 6),
+    axis.text.y = element_text(size = 6),
+    legend.title = element_text(size = 10),
+    panel.background = element_rect(fill = "white", color = NA),
+    plot.background = element_rect(fill = "white", color = NA)
+  ) +
+  guides(fill = guide_colorbar(title = "Correlation"))
+
+# Save as PNG
+ggsave("correlation_matrix_plot.png", p, width = 6, height = 6, dpi = 300)
+```
