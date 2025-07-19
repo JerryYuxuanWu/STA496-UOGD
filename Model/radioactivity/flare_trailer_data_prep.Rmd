@@ -211,6 +211,22 @@ flaring_daily <- flaring_loving_50 %>%
 ```
 
 ```{r}
+# Notice that if there's no flare in a given night, there's no row for that day.
+# Hence, we will fill out these days with n_flare variables to 0 and rest to NA
+flaring_daily <- flaring_daily %>%
+  bind_rows(
+    tibble(date = as.Date(setdiff(seq(as.Date("2023-05-01"), as.Date("2024-06-01"), by = 'day'), flaring_daily$date)),
+           n_flare_50 = 0,
+           n_flare_30 = 0,
+           n_flare_20 = 0,
+           n_flare_10 = 0,
+           n_flare_5 = 0,
+           weighted.count = 0)
+  ) %>%
+  arrange(date)
+```
+
+```{r}
 #unique nights per buffer
 flaring_daily %>%
     filter(n_flare_50 != 0) %>%

@@ -17,6 +17,10 @@ library(ggcorrplot)
 library(kableExtra)
 # set working directory to file location, this is table from flare_trailer_data_prep.Rmd
 full_merged<-read.csv("table6_new.csv")
+
+# Run this if only want days with >1 flares within 50km radius
+# full_merged <- full_merged %>%
+#   filter(n_flare_50 > 0)
 ```
 
 ```{r}
@@ -101,6 +105,7 @@ for (trailer_compound in response) {
 
 
 ```{r}
+# Show the results of models with combinations of the 3 bins.
 compound_flare_lm_result %>%
   filter(`Wind Direction` != 'bin') %>%
   select(Compound, Radius, `Wind Direction`,  `Adj R-sq`, df, Significant_Variables) %>%
@@ -118,6 +123,7 @@ compound_flare_lm_result %>%
 ```
 
 ```{r}
+# Show the results of models with full bins
 compound_flare_lm_result %>%
   filter(`Wind Direction` == 'bin') %>%
   select(Compound, Radius, `Adj R-sq`, df, Significant_Variables) %>%
@@ -134,6 +140,7 @@ compound_flare_lm_result %>%
 ```
 
 ```{r}
+# Show the results where number of flares is significant
 filtered_result_3windbins <- compound_flare_lm_result %>%
   filter(`Wind Direction` != 'bin') %>%
   filter(str_detect(Significant_Variables, "flare|methane_eq"))%>%
@@ -155,6 +162,7 @@ filtered_result_3windbins %>%
 ```
 
 ```{r}
+# Show the results where number of flares is significant
 filtered_result_fullwindbins <- compound_flare_lm_result %>%
   filter(`Wind Direction` == 'bin') %>%
   filter(str_detect(Significant_Variables, "flare|methane_eq"))%>%
