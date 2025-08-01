@@ -37,6 +37,7 @@ function (lon, lat, bearing, distance)
 
 ```{r}
 # Feb 3, 2025, modifying the boundary to take flaring measurements
+# bounded box for circle with radius 200km around trailer
 source <- c(32.2961, -104.1089)
 north_bound <- new.lon.lat(source[2], source[1], 0, 200)
 south_bound <- new.lon.lat(source[2], source[1], 180, 200)

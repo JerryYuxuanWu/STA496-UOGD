@@ -107,14 +107,29 @@ ethane <- hourly_data %>%
 
 ## Polar plot
 ```{r}
-polarPlot(ethane, pollutant = 'ethane', x= 'wsp_ms', wd = 'wdr_deg',
-          key.header = "Mean Ethane (ppb)", key.footer = NULL)
+polarPlot(ethane %>%
+            rename(ws = 'wsp_ms',
+                   wd = 'wdr_deg'), 
+          pollutant = 'ethane', 
+          x= 'ws', 
+          wd = 'wd',
+          min.bin = 2,
+          key.header = "Mean", 
+          key.footer = 'Ethane')
 ```
+
 ```{r}
 # beyond 90th percentile
 ethane_90 <- ethane %>% filter(ethane > quantile(ethane, probs = 0.9))
-polarPlot(ethane_90, pollutant = 'ethane', x= 'wsp_ms', wd = 'wdr_deg',
-          key.header = "Mean Ethane (ppb)", key.footer = NULL)
+polarPlot(ethane_90 %>%
+            rename(ws = 'wsp_ms',
+                   wd = 'wdr_deg'), 
+          pollutant = 'ethane', 
+          x= 'ws', 
+          wd = 'wd',
+          min.bin = 2,
+          key.header = "Mean", 
+          key.footer = 'Ethane')
 ```
 
 ## Diurnal boxplot
