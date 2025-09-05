@@ -228,6 +228,158 @@ flare_v35_plot <- leaflet() %>%
             position = 'bottomleft')
 
 flare_v35_plot
-saveWidget(flare_v35_plot, file="flare_v35_map.html")
+ 
+```
+
+# Well location map (10KM) around
+```{r}
+# Part of code is copied from WellProcess.rmd
+wells_clean <- readRDS("../data/wells/cleaned_wells_cb.rds")
+wells_prod <- readRDS("../data/wells/cb_wells_prod.rds")
+
+# filter distance
+loving_lonlat <- c(-104.1096 , 32.297770)
+distance_km_lov <- function(long, lati){
+  start <- c(long, lati)
+  distGeo(start, loving_lonlat) / 1000
+}
+
+wells_prod <- wells_prod %>% select(-c("spud_date", "completion_date", "first_prod_date", "last_prod_date", "Operator.Company.Name"))%>% 
+  mutate(distToLovi = mapply(distance_km_lov, uog_lon, uog_lat))
+```
+
+```{r}
+# Create some binary variables for well type
+# 1. Conventional well that produced between (including) May 2023, June 2024 (Red)
+# 2. Conventional well that did not produce between ^ (Green)
+# 3. Unconventional well that produced between ^ (Blue)
+# 4. Unconventional well that did not produce between ^ (Purple)
+# The wells taken into consideration are wells that produced sometime on or after 2010
+wells_prod <- wells_prod %>%
+  mutate(type = case_when(between(prod_date, as.Date('2023-05-01'), as.Date('2024-06-01')) & 
+                            drill_type == 'V' ~ 1,
+                          !between(prod_date, as.Date('2023-05-01'), as.Date('2024-06-01')) & 
+                            drill_type == 'V' ~ 2,
+                          between(prod_date, as.Date('2023-05-01'), as.Date('2024-06-01')) & 
+                            drill_type != 'V' ~ 3,
+                          !between(prod_date, as.Date('2023-05-01'), as.Date('2024-06-01')) & 
+                            drill_type != 'V' ~ 4,
+                          .default = 5))
+
+wells_prod_viz_df <- wells_prod %>%
+  group_by(api, uog_lon, uog_lat, distToLovi) %>%
+  summarise(type = min(type)) %>%
+  distinct()
+```
+
+```{r}
+labels <- c('Conventional & Active during sampling', 'Conventional & Inactive during sampling', 'Unconventional & Active during sampling', 'Unconventional & Inactive during sampling')
+
+colors <- c('Red', 'Green', 'Blue', 'Purple')
+
+wells_prod_viz_df <- split(wells_prod_viz_df, wells_prod_viz_df$type)
+
+l <- leaflet() %>%
+  addProviderTiles("Esri.WorldImagery") %>% 
+  addProviderTiles("CartoDB.PositronOnlyLabels")
+
+names(wells_prod_viz_df) %>%
+  purrr::walk( function(df) {
+    l <<- l %>%
+      addCircles(data=wells_prod_viz_df[[df]],
+                 lng=~uog_lon, lat=~uog_lat,
+                 label=~as.character(api),
+                 popup=~as.character(api),
+                 fillColor = colors[as.numeric(df)],
+                 stroke = T,  radius = 125, weight = 1, 
+                 col= colors[as.numeric(df)], fillOpacity = 1,
+                 group = labels[as.numeric(df)],
+                 labelOptions = labelOptions(noHide = FALSE, direction = 'auto'))
+  })
+
+l <- l %>%
+  addLegend(colors = colors, 
+          labels = labels,
+          position = 'bottomleft') %>%
+  addLayersControl(
+    overlayGroups = labels,
+    options = layersControlOptions(collapsed = FALSE)
+  )
+l
+saveWidget(l, file="well_map.html")
+```
+
+```{r}
+wells_prod_viz_df <- wells_prod %>%
+  group_by(api, uog_lon, uog_lat, distToLovi) %>%
+  summarise(type = min(type)) %>%
+  distinct()
+
+wells_prod_viz_df %>% group_by(type)%>% summarise(n = n(), `n_10km` = sum(distToLovi<=10)) %>%
+  cbind(labels) %>% mutate(type=labels) %>% select(type, n, `n_10km`) %>%
+  add_row(tibble(type = 'Total', 
+                 n = nrow(wells_prod_viz_df),
+                 `n_10km` = sum(wells_prod_viz_df$distToLovi <= 10)))
+```
+
+```{r}
+a <- wells_prod %>%
+  group_by(prod_date, type) %>%
+  filter(prod_date >= '2023-05-01', prod_date <= '2024-06-01') %>%
+  summarize(
+    monthly_oil = sum(monthly_oil, na.rm = T),
+    monthly_gas = sum(monthly_gas, na.rm = T)
+  ) %>%
+  mutate(type = if_else(type == 1, 'Conventional', 'Unconventional')) %>%
+  bind_rows(
+    
+  )
+
+b <- wells_prod %>%
+  filter(distToLovi <= 10) %>%
+  group_by(prod_date, type) %>%
+  filter(prod_date >= '2023-05-01', prod_date <= '2024-06-01') %>%
+  summarize(
+    monthly_oil_10km = sum(monthly_oil, na.rm = T),
+    monthly_gas_10km = sum(monthly_gas, na.rm = T)
+  ) %>%
+  mutate(type = if_else(type == 1, 'Conventional', 'Unconventional')) %>%
+  bind_rows(
+    
+  )
+
+total <- left_join(
+  wells_prod %>%
+    group_by(prod_date) %>%
+    filter(prod_date >= '2023-05-01', prod_date <= '2024-06-01') %>%
+    summarize(
+      monthly_oil = sum(monthly_oil, na.rm = T),
+      monthly_gas = sum(monthly_gas, na.rm = T)
+    )
+  ,
+  wells_prod %>%
+    filter(distToLovi <= 10) %>%
+    group_by(prod_date) %>%
+    filter(prod_date >= '2023-05-01', prod_date <= '2024-06-01') %>%
+    summarize(
+      monthly_oil_10km = sum(monthly_oil, na.rm = T),
+      monthly_gas_10km = sum(monthly_gas, na.rm = T)
+    )
+) %>%
+  mutate(type = 'Total') %>%
+  relocate(prod_date, type)
+total
+
+c <- left_join(a, b) %>%
+  left_join(total, join_by(prod_date), suffix = c("", "_total")) %>%
+  mutate(oil_percent = round(monthly_oil/monthly_oil_total*100, 2),
+         gas_percent = round(monthly_gas/monthly_gas_total*100, 2),
+         oil_percent_10km = round(monthly_oil_10km/monthly_oil_10km_total*100, 2),
+         gas_percent_10km = round(monthly_gas_10km/monthly_gas_10km_total*100, 2))
+  mutate(monthly_oil = str_glue("{monthly_oil} ({oil_percent}%)"),
+         monthly_gas = str_glue("{monthly_gas} ({gas_percent}%)"),
+         monthly_oil_10km = str_glue("{monthly_oil_10km} ({oil_percent_10km}%)"),
+         monthly_gas_10km = str_glue("{monthly_gas_10km} ({gas_percent_10km}%)"))
+c
 ```
 

@@ -1,0 +1,407 @@
+---
+title: 'Visualizations of LNM Flares and Wells'
+date: "2025-07-29"
+output:
+  html_document:
+    df_print: paged
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(dbscan)
+library(leaflet)
+library(sf)
+library(units)
+library(KernSmooth)
+library(raster)
+library(units)
+library(lubridate)
+library(ggcorrplot)
+select <- dplyr::select
+```
+
+### Maps of LNM: wells and flares
+
+-  VNF V3.5 flares shown are HDBSCAN clustered from 2023-05-01 to 2024-05-31 and within 50km of LNM. 
+- Map the cluster centroids sized by number of flares in the cluster (LNM in green).
+
+```{r echo=F, warning=F, message=F}
+# Set data directory
+# mf_dir <- "/Users/meredith/Library/CloudStorage/GoogleDrive-mereditf@usc.edu/Shared drives/HEI Energy"
+jw_dir <- "D:\\PhD\\Research\\New Mexico Flaring"
+main_dir <- mf_dir # Change this to match your directory
+```
+
+
+
+```{r echo=F, warning=F, message=F}
+#pb_vnf<-readRDS(paste0(main_dir, "/STA496-UOGD/data/pb_vnf/pb-vnf_230414-240901.rds"))
+
+# Load in all flares (w/ annual cluster results) for Permian
+#pb_clustered <- readRDS(paste0(main_dir, "/STA496-Spatial-Analysis-on-UOGD/Clustering/pb_vnf_clustered_20130101_20240901.rds"))
+pb_clustered <- readRDS(paste0(main_dir, "/data/vnf data/final_model_and_dataset/model_dataset_highest_train_r2.rds"))
+pb_clustered$year <- year(as.Date(pb_clustered$file_date))
+pb_clustered$lon_m_utm13<-pb_clustered$lon_km_utm13*1000
+pb_clustered$lat_m_utm13<-pb_clustered$lat_km_utm13*1000
+
+# Flares around trailer
+trailer_coord <- st_sf(geometry = st_sfc(st_point(c(-104.1089, 32.2961)), crs = 4326)) %>%
+  st_transform("+proj=utm +zone=13 ellps=WGS84")
+
+# Compute cluster centroids
+cluster_centroids <- pb_clustered %>%
+ # filter(year >= 2023, cluster != 0) %>%
+  group_by(cluster) %>%
+  summarise(lon_m_utm13 = mean(lon_m_utm13), lat_m_utm13 = mean(lat_m_utm13), n = n()) %>%
+  ungroup()
+
+cluster_centroids <- cluster_centroids %>%
+  st_as_sf(coords = c('lon_m_utm13', 'lat_m_utm13'), 
+           crs = "+proj=utm +zone=13 ellps=WGS84",
+           remove = F)
+
+cluster_centroids_50km <- cluster_centroids%>%
+  mutate(dist_to_trailer = st_distance(cluster_centroids, trailer_coord))
+
+cluster_centroids_50km <- cluster_centroids_50km %>%
+  filter(dist_to_trailer <= set_units(50, "km"))
+
+# Get the lat/lon
+cluster_centroids_50km <- cluster_centroids_50km %>%
+  st_transform(4326) %>%
+  mutate(lon = sf::st_coordinates(.)[, 1],
+         lat = sf::st_coordinates(.)[, 2])
+  
+# Filter to flares between 2023-05-01 and 2024-05-31 and clustered (not noise)
+# pb_clustered <- pb_clustered %>%
+#  filter(date >= '2023-05-01' & date <= '2024-05-31' & !(cluster == 0))
+
+# Filter to flares within 50 km around trailer
+trailer_coord <- st_sf(geometry = st_sfc(st_point(c(-104.1095, 32.2974)), crs = 4326)) %>%
+  st_transform("+proj=utm +zone=13 ellps=WGS84")
+
+pb_clustered <- pb_clustered %>%
+  st_as_sf(coords = c('lon_m_utm13', 'lat_m_utm13'), crs = "+proj=utm +zone=13 ellps=WGS84")
+
+pb_clustered <- pb_clustered%>%
+  mutate(dist_to_trailer = st_distance(pb_clustered, trailer_coord))
+
+cb_clustered_50km <- pb_clustered %>%
+  filter(dist_to_trailer <= set_units(50, "km"))
+
+cb_clustered_50km <- cb_clustered_50km %>%
+  st_transform(4326) %>%
+  mutate(lon = sf::st_coordinates(.)[, 1],
+         lat = sf::st_coordinates(.)[, 2])
+  
+
+# Filter for cluster centroids for these flares
+#cluster_centroids_filtered <- cluster_centroids %>%
+#  filter((year == 2023 & cluster %in% unique(cb_clustered_50km$cluster[cb_clustered_50km$year==2023])) |
+#         (year == 2024 & cluster %in% unique(cb_clustered_50km$cluster[cb_clustered_50km$year==2024])))
+
+leaflet() %>%
+  addTiles() %>%
+  addCircles(data = cluster_centroids_50km, 
+             lng = ~lon, lat = ~lat, weight = 1, fillColor="#1E90FF", fillOpacity = 1,
+    radius = ~sqrt(n) * 100
+  ) %>%
+    addCircleMarkers(lng = -104.1095, lat =  32.2974,
+                   radius = 10,
+                   fillOpacity = 1,
+                   fillColor = 'lightgreen',
+                   color = 'darkgreen',
+                   stroke = TRUE,
+                   weight=2)%>%
+  addScaleBar("bottomright")
+
+```
+- This shows a map of individual flares (LNM green)
+
+```{r echo=F, warning=F, message=F}
+leaflet() %>%
+  addTiles() %>%
+
+  addCircleMarkers(data = cb_clustered_50km, 
+                   lng = ~lon, lat = ~lat,
+                   radius = 5,
+                   fillColor = "tomato",
+                   fillOpacity = 1,
+                   stroke = FALSE) %>%
+
+  addCircleMarkers(lng = -104.1095, lat =  32.2974,
+                   radius = 10,
+                   fillOpacity = 1,
+                   fillColor = 'lightgreen',
+                   color = 'darkgreen',
+                   stroke = TRUE,
+                   weight=2)%>%
+  addScaleBar("bottomright")
+```
+
+- This includes density map of wells (Enverus) with clustered flares on top
+
+
+```{r echo=F, warning=F, message=F}
+#wells_cb<-readRDS(paste0(main_dir, "/flaring/STA496-Spatial-Analysis-on-UOGD/data/wells/cleaned_wells_cb.rds"))
+wells_pb<-readRDS(paste0(main_dir, "/flaring/STA496-Spatial-Analysis-on-UOGD/data/wells/cleaned_wells_pb.rds"))
+wells_pb <- wells_pb %>%
+  st_as_sf(coords = c("uog_lon", "uog_lat"), crs = 4326) %>%  
+  st_transform(crs = "+proj=utm +zone=13 +datum=WGS84 +units=m +no_defs")  
+trailer_coord <- st_sf(geometry = st_sfc(st_point(c(-104.1089, 32.2961)), crs = 4326)) %>%
+  st_transform("+proj=utm +zone=13 +datum=WGS84 +units=m +no_defs")
+
+wells_pb <- wells_pb%>%
+  mutate(dist_to_trailer = st_distance(wells_pb, trailer_coord))
+
+wells_cb <- wells_pb %>%
+  filter(dist_to_trailer <= set_units(50, "km"))
+
+wells_cb<-wells_cb[wells_cb$first_prod_date <= '2024-05-01' & wells_cb$last_prod_date >= '2023-05-01',]
+
+wells_cb <- wells_cb %>%
+  st_transform(4326) %>%
+  mutate(uog_lon = sf::st_coordinates(.)[, 1],
+         uog_lat = sf::st_coordinates(.)[, 2])
+
+wells_cb_map<-st_drop_geometry(wells_cb)
+wells_cb_map$uog_lon <- as.numeric((wells_cb_map$uog_lon))
+wells_cb_map$uog_lat <- as.numeric((wells_cb_map$uog_lat))
+lon_range <- range(wells_cb_map$uog_lon, na.rm = TRUE)
+lat_range <- range(wells_cb_map$uog_lat, na.rm = TRUE)
+lon_buffer <- 0.1
+lat_buffer <- 0.1
+xlim <- c(lon_range[1] - lon_buffer, lon_range[2] + lon_buffer)
+ylim <- c(lat_range[1] - lat_buffer, lat_range[2] + lat_buffer)
+
+coords <- wells_cb %>% select(uog_lon, uog_lat) %>% as.matrix()
+# Redo KDE with smaller range and more grid points for detail
+kde <- bkde2D(
+  coords,
+  bandwidth = c(0.03, 0.03),         # Tighter bandwidth = more detail
+  gridsize = c(250, 250),            # Higher grid resolution
+  range.x = list(xlim, ylim)
+)
+
+KernelDensityRaster <- raster(list(x = kde$x1, y = kde$x2, z = kde$fhat))
+KernelDensityRaster[KernelDensityRaster < 0.01] <- NA  # Threshold
+palRaster <- colorNumeric("Spectral", domain = KernelDensityRaster@data@values, na.color = "transparent")
+
+
+addLegendCustom <- function(map, colors, labels, sizes, opacity = 1, position = "topright", title = NULL) {
+  colorAdditions <- paste0(colors, "; width:", sizes, "px; height:", sizes, "px; border-radius:50%")
+  labelAdditions <- paste0("<div style='display: inline-block;height: ", sizes,
+                           "px;margin-top: 4px;line-height: ", sizes,
+                           "px;'>", labels, "</div>")
+  return(addLegend(map, position = position, colors = colorAdditions, labels = labelAdditions, opacity = opacity, title = title))
+}
+
+
+legend_sizes <- c(5, 10, 15, 20)      
+legend_labels <- c("N≤12", "N≤25", "N≤45", "N≤275")
+circle_radii <- sqrt(legend_sizes) * 5  
+
+leaflet() %>%
+  addTiles() %>%
+  addRasterImage(KernelDensityRaster,
+                 colors = palRaster,
+                 opacity = 0.55) %>%
+    addCircleMarkers(lng = -104.1095, lat =  32.2974,
+                   radius = 10,
+                   fillOpacity = 1,
+                   fillColor = 'lightgreen',
+                   color = 'darkgreen',
+                   stroke = TRUE,
+                   weight=2)%>%
+  addCircles(data = cluster_centroids_50km, 
+             lng = ~lon, lat = ~lat,
+             weight = 1, fillColor = "#1E90FF", fillOpacity = 1,
+             radius = ~sqrt(n) * 100) %>%
+  addCircleMarkers(data = cb_clustered_50km, 
+                   lng = ~lon, lat = ~lat,
+                   radius = 5,
+                   fillColor = "tomato",
+                   fillOpacity = 1,
+                   stroke = FALSE) %>%
+  addLegend(pal = palRaster,
+            values = KernelDensityRaster@data@values,
+            title = "Well Density") %>%
+  addLegendCustom(colors = rep("#1E90FF", 3),
+                  labels = legend_labels,
+                  sizes = circle_radii,
+                  title = "# Flares") %>%
+  addScaleBar("bottomright")
+
+
+```
+
+
+```{r eval=F, echo=F }
+# Experiment with visualizing clusters here.
+cluster_a <- 232
+year_a <- 2024
+leaflet() %>%
+  addTiles() %>%
+  addCircleMarkers(data = cb_clustered_50km %>% filter(cluster == cluster_a, year == year_a),
+             lng=~vnf_lon, lat=~vnf_lat, 
+             radius = 1, fillOpacity  = 1, stroke = F) %>%
+  addCircles(data = cluster_centroids_filtered %>% filter(cluster == cluster_a, year == year_a), 
+             lng = ~lon, lat = ~lat, weight = 1,
+    radius = ~sqrt(n) * 120
+  )
+```
+
+
+- Correlation heat map of LNM data
+
+```{r echo=F, message=F, warning=F}
+# hourly_data <- readRDS("/Users/meredith/Library/CloudStorage/GoogleDrive-mereditf@usc.edu/Shared drives/HEI Energy/flaring/STA496-UOGD/STA496-UOGD/DataProcessing/Trailer_hourly_merge_20240905.rds")
+
+#hourly_data <- readRDS("./DataProcessing/Trailer_hourly_merge_20240905.rds")
+# wd<-"/Users/meredith/Library/CloudStorage/GoogleDrive-mereditf@usc.edu/Shared drives/HEI Energy/data/final data/LNM_Finalized_Data/VOC sampling window data"
+wd<-"../data/VOC sampling window data 20240601"
+# File names
+filenames <- c(
+  "LNM_h2s_so2_voc_merge.csv",
+  "Boulder_AIR_LNM_ch4_finalized.csv",
+  "Boulder_AIR_LNM_nox_finalized.csv",
+  "Boulder_AIR_LNM_co_finalized.csv",
+  "Boulder_AIR_LNM_met_finalized.csv",
+  "Boulder_AIR_LNM_o3_finalized.csv",
+  "Boulder_AIR_LNM_rd_finalized.csv"
+)
+
+# Full paths to each file
+filepaths <- file.path(wd, filenames)
+
+
+read_skip_second <- function(filepath) {
+  lines <- readLines(filepath)
+  lines <- lines[-2]  # Remove the second row
+  read_csv(paste(lines, collapse = "\n"))
+}
+
+# Read all files
+data_list <- lapply(filepaths, read_skip_second)
+
+# Merge all by 'time_utc'
+hourly_data <- reduce(data_list, full_join, by = "time_utc")
+
+# Optional: sort by time
+hourly_data <- hourly_data %>% arrange(time_utc)
+
+hourly_data$total_radioactivity<-hourly_data$radon_B+hourly_data$rd_particle_B
+
+# check heptane, butadiene
+# exclude values below LOD
+
+hourly_data <- hourly_data%>%
+  rename('co2' = 'co2_ppm') %>%
+  mutate(datetime_mountain = with_tz(as.POSIXct(time_utc, tz = 'UTC', 
+                                                format = "%Y-%m-%d %H:%M:%OS"), 
+                                     tzone = "America/Denver")) %>%
+  filter(date(datetime_mountain) >= '2023-05-01', date(datetime_mountain) <= '2024-05-31')
+
+cor_data <- hourly_data %>% select("ethane", "ethene", "propane", "propene",
+                                        "1_3-butadiene", "i-butane", "n-butane",
+                                        "acetylene", "cyclopentane", "i-pentane",
+                                        "n-pentane", "n-hexane", "isoprene", "n-heptane",
+                                        "benzene", "n-octane", "toluene", "ethyl-benzene", 
+                                        "m&p-xylene", "o-xylene",'ch4', 'co2', 'co', 'h2s', 'so2', 'nox', 'total_radioactivity')
+
+var_names <- c(
+  # Alkanes
+  "ethane" = "Ethane",
+  "propane" = "Propane",
+  "i-butane" = "i-Butane",
+  "n-butane" = "n-Butane",
+  "i-pentane" = "i-Pentane",
+  "n-pentane" = "n-Pentane",
+  "n-hexane" = "n-Hexane",
+  "n-heptane" = "n-Heptane",
+  "n-octane" = "n-Octane",
+  
+  # Cycloalkane
+  "cyclopentane" = "Cyclopentane",
+
+  # Alkenes
+  "ethene" = "Ethene",
+  "propene" = "Propene",
+  "1_3-butadiene" = "1,3-Butadiene",
+
+  # Alkyne
+  "acetylene" = "Acetylene",
+
+  # Biogenic
+  "isoprene" = "Isoprene",
+
+  # Aromatics (BTEX)
+  "benzene" = "Benzene",
+  "toluene" = "Toluene",
+  "ethyl-benzene" = "Ethylbenzene",
+  "m&p-xylene" = "m&p-Xylene",
+  "o-xylene" = "o-Xylene",
+
+  # Other gases
+  "ch4" = "CH4",
+  "co2" = "CO2",
+  "co" = "CO",
+  "nox" = "NOx",
+  "so2" = "SO2",
+  "h2s" = "H2S",
+
+  # Radioactivity
+  "total_radioactivity" = "Radioactivity"
+)
+cor_matrix <- cor(cor_data, use = "complete.obs", method="pearson")
+
+# Reorder columns and rows
+cor_matrix <- cor_matrix[names(var_names), names(var_names)]
+
+# Rename display names
+colnames(cor_matrix) <- var_names
+rownames(cor_matrix) <- var_names
+
+
+
+# Set negative values to NA
+cor_matrix_pos <- cor_matrix
+cor_matrix_pos[cor_matrix_pos <= 0] <- NA
+cor_matrix_rev <- cor_matrix_pos[(rownames(cor_matrix_pos)), rev(colnames(cor_matrix_pos))]
+cor_matrix_flip <- t(cor_matrix_rev) 
+
+
+p <- ggcorrplot(cor_matrix_rev,
+                method = "square",
+                type = "full",
+                lab = TRUE,
+                lab_size = 1.5,
+                colors = c("lightblue", "white", "darkred"),  
+                title = "",
+                outline.color = "lightgray",
+                hc.order = FALSE
+          )
+
+
+final_plot<-p +
+  scale_fill_gradientn(
+    colors = c("#2166AC", "#67A9CF", "#D1E5F0", "#FFFFBF", "#FDAE61", "#D73027"),
+    limits = c(0, 1),
+    name = "Correlation"
+  ) +
+  theme_minimal(base_size = 10) +
+  theme(
+    axis.text.x = element_text(size = 6, angle = 45, hjust = 1),
+    axis.text.y = element_text(size = 6),
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    panel.background = element_rect(fill = "white"),
+    plot.background = element_rect(fill = "white", color=NA),
+    panel.border = element_blank(),  
+    panel.grid = element_blank()
+    
+  )
+final_plot
+ggsave(paste0( "correlation_plot.png"), plot = final_plot, bg="white",width = 8, height = 6, dpi = 300)
+```
+
