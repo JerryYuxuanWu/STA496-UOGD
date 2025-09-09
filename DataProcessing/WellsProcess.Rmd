@@ -34,20 +34,19 @@ distance_km_lov <- function(long, lati){
   distGeo(start, loving_lonlat) / 1000
 }
 
-wells_prod <- wells_prod %>% select(-c("drill_type", "spud_date", "completion_date", "first_prod_date", "last_prod_date", "Operator.Company.Name"))%>% 
+wells_prod <- wells_prod %>% select(-c("spud_date", "completion_date", "first_prod_date", "last_prod_date", "Operator.Company.Name"))%>% 
   mutate(distToLovi = mapply(distance_km_lov, uog_lon, uog_lat))
 
 # Look at only conventional drilling by drill_type == 'V'
 wells_prod_conv <- wells_prod %>%
-  filter(drill_type == 'V') %>%
-  select(-c("drill_type", "spud_date", "completion_date", "first_prod_date", "last_prod_date", "Operator.Company.Name"))%>% 
-  mutate(distToLovi = mapply(distance_km_lov, uog_lon, uog_lat))
+  filter(drill_type == 'V')
 ```
+
 ```{r}
 # filter distance
-wells_prod <- wells_prod %>% filter(distToLovi <= 10) %>% select(-c("uog_lon", "uog_lat", "well_status_p", "well_status", "prod_type_p", "production_type"))
+wells_prod <- wells_prod %>% filter(distToLovi <= 50) %>% select(-c("drill_type", "uog_lon", "uog_lat", "well_status_p", "well_status", "prod_type_p", "production_type"))
 
-wells_prod_conv <- wells_prod_conv %>% filter(distToLovi <= 10) %>% select(-c("uog_lon", "uog_lat", "well_status_p", "well_status", "prod_type_p", "production_type"))
+wells_prod_conv <- wells_prod_conv %>% filter(distToLovi <= 50) %>% select(-c("drill_type", "uog_lon", "uog_lat", "well_status_p", "well_status", "prod_type_p", "production_type"))
 ```
 
 
