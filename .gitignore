@@ -6,3 +6,5 @@ data/.DS_Store
 data/.DS_Store
 DataProcessing/.DS_Store
 DataProcessing/pb-vnf_20230501-20240601.rds
+data/wells/Carlsbad 80km radius wells Well Headers.CSV
+data/wells/Carlsbad 80km radius wells Well Monthly Production.CSV
