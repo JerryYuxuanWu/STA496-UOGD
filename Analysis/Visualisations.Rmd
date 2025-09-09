@@ -375,11 +375,14 @@ c <- left_join(a, b) %>%
   mutate(oil_percent = round(monthly_oil/monthly_oil_total*100, 2),
          gas_percent = round(monthly_gas/monthly_gas_total*100, 2),
          oil_percent_10km = round(monthly_oil_10km/monthly_oil_10km_total*100, 2),
-         gas_percent_10km = round(monthly_gas_10km/monthly_gas_10km_total*100, 2))
-  mutate(monthly_oil = str_glue("{monthly_oil} ({oil_percent}%)"),
-         monthly_gas = str_glue("{monthly_gas} ({gas_percent}%)"),
-         monthly_oil_10km = str_glue("{monthly_oil_10km} ({oil_percent_10km}%)"),
-         monthly_gas_10km = str_glue("{monthly_gas_10km} ({gas_percent_10km}%)"))
+         gas_percent_10km = round(monthly_gas_10km/monthly_gas_10km_total*100, 2)) %>%
+  mutate(monthly_oil = as.character(str_glue("{monthly_oil} ({oil_percent}%)")),
+         monthly_gas = as.character(str_glue("{monthly_gas} ({gas_percent}%)")),
+         monthly_oil_10km = as.character(str_glue("{monthly_oil_10km} ({oil_percent_10km}%)")),
+         monthly_gas_10km = as.character(str_glue("{monthly_gas_10km} ({gas_percent_10km}%)"))) %>%
+  select(-ends_with("_total"), -contains('_percent')) %>%
+  bind_rows(total %>% mutate(across(contains('monthly'), as.character))) %>%
+  arrange(prod_date)
 c
 ```
 
