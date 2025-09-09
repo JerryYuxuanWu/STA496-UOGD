@@ -21,7 +21,7 @@ library(gridExtra)
 - these data are all of the merged trailer data VOCs at 10 minutes within an hour, matched with the other compounds at that 10 minutes.
 
 ```{r warning=FALSE, message=FALSE}
-hourly_data <- readRDS("../DataProcessing/TrailerProcessed-20240601.rds")
+hourly_data <- readRDS("../data/processed_data/TrailerProcessed-20240601.rds")
 
 # restrict to study period, make mountain time
 hourly_data <- hourly_data %>% rename('co2' = 'co2_ppm')  %>%

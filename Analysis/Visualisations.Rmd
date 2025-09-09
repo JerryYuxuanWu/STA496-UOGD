@@ -360,10 +360,7 @@ a <- wells_prod %>%
     monthly_oil = sum(monthly_oil, na.rm = T),
     monthly_gas = sum(monthly_gas, na.rm = T)
   ) %>%
-  mutate(type = if_else(type == 1, 'Conventional', 'Unconventional')) %>%
-  bind_rows(
-    
-  )
+  mutate(type = if_else(type == 1, 'Conventional', 'Unconventional'))
 
 b <- wells_prod %>%
   filter(distToLovi <= 50) %>%
@@ -373,10 +370,7 @@ b <- wells_prod %>%
     monthly_oil_50km = sum(monthly_oil, na.rm = T),
     monthly_gas_50km = sum(monthly_gas, na.rm = T)
   ) %>%
-  mutate(type = if_else(type == 1, 'Conventional', 'Unconventional')) %>%
-  bind_rows(
-    
-  )
+  mutate(type = if_else(type == 1, 'Conventional', 'Unconventional'))
 
 total <- left_join(
   wells_prod %>%
@@ -396,7 +390,7 @@ total <- left_join(
       monthly_gas_50km = sum(monthly_gas, na.rm = T)
     )
 ) %>%
-  mutate(type = 'Total') %>%
+  mutate(type = 'Both') %>%
   relocate(prod_date, type)
 total
 
@@ -413,6 +407,50 @@ c <- left_join(a, b) %>%
   select(-ends_with("_total"), -contains('_percent')) %>%
   bind_rows(total %>% mutate(across(contains('monthly'), as.character))) %>%
   arrange(prod_date)
-write_csv(c, 'production_table.csv')
+c
+#write_csv(c, 'production_table.csv')
+```
+```{r}
+# Version 2: Only 50km.
+both <- wells_prod %>%
+    filter(distToLovi <= 50) %>% 
+    group_by(prod_date) %>%
+    filter(prod_date >= '2023-05-01', prod_date <= '2024-06-01') %>%
+    summarize(
+      monthly_oil_50km = sum(monthly_oil, na.rm = T),
+      monthly_gas_50km = sum(monthly_gas, na.rm = T)
+    ) %>%
+  mutate(type = 'Both',
+         prod_date = as.character(prod_date)) %>%
+  relocate(prod_date, type)
+
+both <- both %>%
+  add_row(tibble(prod_date = 'Total', 
+                 type = 'Both', 
+                 monthly_oil_50km = sum(both$monthly_oil_50km), 
+                 monthly_gas_50km = sum(both$monthly_gas_50km)))
+
+b <- b %>%
+  ungroup() %>%
+  mutate(prod_date = as.character(prod_date)) %>%
+  add_row(b %>% 
+            group_by(type) %>% 
+            summarise(monthly_oil_50km = sum(monthly_oil_50km),
+                      monthly_gas_50km = sum(monthly_gas_50km)) %>%
+            mutate(prod_date = 'Total'))
+
+
+d <- left_join(b, both, join_by(prod_date), suffix = c("", "_both"))
+
+d <- d %>%
+  mutate(oil_percent_50km = round(monthly_oil_50km/monthly_oil_50km_both*100, 2),
+         gas_percent_50km = round(monthly_gas_50km/monthly_gas_50km_both*100, 2)) %>%
+  mutate(monthly_oil_50km = as.character(str_glue("{monthly_oil_50km} ({oil_percent_50km}%)")),
+         monthly_gas_50km = as.character(str_glue("{monthly_gas_50km} ({gas_percent_50km}%)"))) %>%
+  select(-ends_with("_both"), -contains('_percent')) %>%
+  bind_rows(both %>% mutate(across(contains('monthly'), as.character))) %>%
+  arrange(prod_date)
+d
+write_csv(d, 'production_table.csv')
 ```
 

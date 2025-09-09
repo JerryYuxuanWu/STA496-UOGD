@@ -17,7 +17,7 @@ library(units)
 # Data
 ## Trailer data
 ```{r}
-trailer_hourly <- readRDS('../DataProcessing/TrailerProcessed-20240601.rds')
+trailer_hourly <- readRDS('../data/processed_data/TrailerProcessed20250909.rds')
 names(trailer_hourly)
 ```
 
@@ -55,7 +55,7 @@ trailer_night_avg <- trailer_hourly_clean %>%
 
 ## Well Data
 ```{r}
-Wells <- readRDS('../DataProcessing/WellsProcessed20240601.rds')
+Wells <- readRDS('../data/processed_data//WellsProcessed20250909.rds')
 ```
 
 ```{r}
@@ -74,7 +74,7 @@ wells_monthly
 
 ## Flare Data
 ```{r}
-flaring <- readRDS('../DataProcessing/FlaringProcessed.rds')
+flaring <- readRDS('../data/processed_data/FlaringProcessed20250909.rds')
 ```
 
 ```{r}

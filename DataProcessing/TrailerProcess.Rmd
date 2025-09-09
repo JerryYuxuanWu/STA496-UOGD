@@ -106,6 +106,6 @@ hourly_data$hour <- as.numeric(substr(hourly_data$time_utc, 12, 13))
 
 ```{r}
 # Saving
-saveRDS(hourly_data, file = "TrailerProcessed20250909.rds")
+saveRDS(hourly_data, file = "../data/processed_data/TrailerProcessed20250909.rds")
 ```
 

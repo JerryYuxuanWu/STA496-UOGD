@@ -49,6 +49,6 @@ weather <- weather %>%
 ```{r}
 # Saving
 # Note that the variables are mostly covered in the trailer dataset, might need adjustments later
-saveRDS(weather, "WeatherProcessed.rds")
+saveRDS(weather, "../data/processed_data/WeatherProcessed.rds")
 ```
 

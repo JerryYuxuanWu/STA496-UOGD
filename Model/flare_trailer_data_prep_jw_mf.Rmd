@@ -14,7 +14,8 @@ library(lwgeom)
 library(sf)
 library(units)
 
-wd<-'/Users/meredith/Library/CloudStorage/GoogleDrive-mereditf@usc.edu/Shared drives/HEI Energy/flaring/new-git/STA496-UOGD'
+#wd<-'/Users/meredith/Library/CloudStorage/GoogleDrive-mereditf@usc.edu/Shared drives/HEI Energy/flaring/new-git/STA496-UOGD'
+wd <- ''
 ```
 
 ## Data
@@ -25,7 +26,7 @@ wd<-'/Users/meredith/Library/CloudStorage/GoogleDrive-mereditf@usc.edu/Shared dr
 ```{r}
 #trailer_hourly <- readRDS('../../DataProcessing/TrailerProcessed-20240601.rds')
 #trailer_hourly <- readRDS('/Users/meredith/Library/CloudStorage/GoogleDrive-mereditf@usc.edu/Shared drives/HEI Energy/flaring/STA496-UOGD/STA496-UOGD/DataProcessing/TrailerProcessed-20240601.rds')
-trailer_hourly <-readRDS(paste0(wd,"/DataProcessing/Trailer_hourly_merge_20240905.rds"))
+trailer_hourly <-readRDS(paste0(wd,"../data/processed_data/Trailer_hourly_merge_20250909.rds"))
 trailer_hourly$total_radioactivity<-trailer_hourly$radon_B+trailer_hourly$rd_particle_B
 ```
 
@@ -118,7 +119,7 @@ trailer_night_avg$wind_bin <- bin_wind_dir(trailer_night_avg$wdr_deg)
 
 
 ```{r}
-Wells <- readRDS(paste0(wd,"/DataProcessing/WellsProcessed20240601.rds"))
+Wells <- readRDS(paste0(wd,"../data/processed_data/WellsProcessed20250909.rds"))
 ```
 
 ```{r}
@@ -148,7 +149,7 @@ wells_monthly <- Wells %>% group_by(substr(prod_date, 1, 7)) %>%
 #flaring2 <- readRDS('FlaringProcessed.rds')
 
 #flaring <-read.csv("../../data/pb_vnf/flaring_v35_clustered.csv")
-flaring <- readRDS("/Users/meredith/Library/CloudStorage/GoogleDrive-mereditf@usc.edu/Shared drives/HEI Energy/data/vnf data/final_model_and_dataset/model_dataset_highest_train_r2.rds")
+flaring <- readRDS(paste0(wd, "../data/processed_data/model_dataset_highest_train_r2.rds"))
 
 flaring <- flaring %>%
   mutate(
@@ -200,7 +201,7 @@ flaring_loving_50 <- flaring %>%
 # summarize a daily count flaring
 flaring_daily <- flaring_loving_50 %>% 
   mutate(inv_dist = ifelse(1 / distToLovi_flare < 0.01, 0, 1 / distToLovi_flare)) %>%
-  filter(distToLovi_flare <= 100) %>% 
+  # filter(distToLovi_flare <= 100) %>% Not necessary since we already filtered for 50km
   group_by(date) %>% 
   summarise(closest.flare = min(distToLovi_flare),
             distToLovi_flare_mean = mean(distToLovi_flare, na.rm=T),
@@ -278,7 +279,7 @@ flaring_loving_50$angle <- angles
 
 ```{r}
 #nmf_data <- readRDS('../../Model/result_rfiles/normalized_hourly_data_5c_less_o3.rds')
-nmf_data <- readRDS('/Users/meredith/Library/CloudStorage/GoogleDrive-mereditf@usc.edu/Shared drives/HEI Energy/papers/nmf/normalized_hourly_data_4c_less_o3.rds')
+nmf_data <- readRDS(paste0(wd, 'result_rfiles/normalized_hourly_data_4c_less_o3.rds'))
 
 ```
 
@@ -358,6 +359,6 @@ full_merged <- full_merged %>%
 full_merged <- full_merged %>%
   filter(day_mountain >= as.Date("2023-05-01"))
 
-write.csv(full_merged, "/Users/meredith/Library/CloudStorage/GoogleDrive-mereditf@usc.edu/Shared drives/HEI Energy/papers/radioactivity/full_data_for_regressions.csv", row.names=FALSE)
+write.csv(full_merged, paste0(wd, "../data/processed_data/full_data_for_regressions.csv", row.names=FALSE))
 #write.csv(full_merged, "table6_new.csv", row.names=FALSE)
 ```

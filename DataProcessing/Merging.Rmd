@@ -10,10 +10,10 @@ library(tidyverse)
 
 ```{r}
 # Read all the related RDS first
-flaring <- readRDS('FlaringProcessed20250909.rds')
-Trailer <- readRDS('TrailerProcessed20250909.rds')
+flaring <- readRDS('../data/processed_data/FlaringProcessed20250909.rds')
+Trailer <- readRDS('../data/processed_data/TrailerProcessed20250909.rds')
 # Weather <- readRDS('WeatherProcessed.rds')
-Wells <- readRDS('WellsProcessed20250909.rds')
+Wells <- readRDS('../data/processed_data/WellsProcessed20250909.rds')
 ```
 
 ## A few processing
@@ -157,8 +157,8 @@ Trailer_hourly_merge$closest.flare[is.na(Trailer_hourly_merge$closest.flare)] <-
 
 ## Saving
 ```{r}
-saveRDS(Trailer_hourly_merge, "Trailer_hourly_merge_20250909.rds")
-saveRDS(Trailer_daily_merge, "Trailer_daily_merge_20250909.rds")
+saveRDS(Trailer_hourly_merge, "../data/processed_data/Trailer_hourly_merge_20250909.rds")
+saveRDS(Trailer_daily_merge, "../data/processed_data/Trailer_daily_merge_20250909.rds")
 ```
 
 

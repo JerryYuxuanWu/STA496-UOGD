@@ -101,6 +101,6 @@ wells_prod_conv_0301 <- wells_prod_conv_0301 %>% group_by(prod_date, distToLovi)
 
 ```{r}
 # save to RDS
-saveRDS(wells_prod_0301, "WellsProcessed20250909.rds")
+saveRDS(wells_prod_0301, "../data/processed_data/WellsProcessed20250909.rds")
 ```
 
