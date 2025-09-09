@@ -304,7 +304,11 @@ l <- l %>%
   addLayersControl(
     overlayGroups = labels,
     options = layersControlOptions(collapsed = FALSE)
-  )
+  ) %>%
+  addScaleBar(
+  position = c("bottomright"),
+  options = scaleBarOptions()
+)
 l
 saveWidget(l, file="well_map.html")
 ```
