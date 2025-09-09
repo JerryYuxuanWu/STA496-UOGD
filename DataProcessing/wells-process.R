@@ -18,7 +18,7 @@ wells_cb <- read_csv('../data/wells/Carlsbad 80km radius wells Well Headers.csv'
 # When downloading from enverus, we used the filters:
 # 1. Drill type in D, H, V
 # 2. Production type in Oil, Gas, Oil & Gas
-# 3. Last production date between 2010-01-01 to current (2025-07-01)
+# 3. Monthly production date between 2010-01-01 to current (2025-07-01)
 # 4. Square box with sides of 160km around the trailer
 
 # Same for Carlsbad

@@ -28,14 +28,19 @@ wells_prod <- readRDS("../data/wells/cb_wells_prod.rds")
 Want to obtain monthly oil and gas production of all wells/prod within 10km of lovings site
 ```{r}
 # filter distance
-loving_lonlat <- c(-104.1096 , 32.297770)
-distance_km_lov <- function(long, lati){
-  start <- c(long, lati)
-  distGeo(start, loving_lonlat) / 1000
-}
+loving_lonlat <- c(-104.1089, 32.2961) 
+loving_lonlat_sf <- st_sfc(st_point(loving_lonlat), crs = 4326) %>%
+  st_transform("+proj=utm +zone=13 ellps=WGS84")
 
-wells_prod <- wells_prod %>% select(-c("spud_date", "completion_date", "first_prod_date", "last_prod_date", "Operator.Company.Name"))%>% 
-  mutate(distToLovi = mapply(distance_km_lov, uog_lon, uog_lat))
+wells_prod <- wells_prod %>%
+  st_as_sf(coords = c('uog_lon', 'uog_lat'), remove = F) %>%
+  st_set_crs(4326) %>%
+  st_transform("+proj=utm +zone=13 ellps=WGS84")
+
+wells_prod <- wells_prod %>%
+  mutate(distToLovi = c(drop_units(st_distance(wells_prod, loving_lonlat_sf)))/1000) %>% 
+  st_drop_geometry() %>%
+  select(-c("spud_date", "completion_date", "first_prod_date", "last_prod_date", "Operator.Company.Name"))
 
 # Look at only conventional drilling by drill_type == 'V'
 wells_prod_conv <- wells_prod %>%
@@ -96,6 +101,6 @@ wells_prod_conv_0301 <- wells_prod_conv_0301 %>% group_by(prod_date, distToLovi)
 
 ```{r}
 # save to RDS
-saveRDS(wells_prod_0301, "WellsProcessed20240601.rds")
+saveRDS(wells_prod_0301, "WellsProcessed20250909.rds")
 ```
 

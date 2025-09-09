@@ -238,14 +238,23 @@ wells_clean <- readRDS("../data/wells/cleaned_wells_cb.rds")
 wells_prod <- readRDS("../data/wells/cb_wells_prod.rds")
 
 # filter distance
-loving_lonlat <- c(-104.1096 , 32.297770)
-distance_km_lov <- function(long, lati){
-  start <- c(long, lati)
-  distGeo(start, loving_lonlat) / 1000
-}
+loving_lonlat <- c(-104.1089, 32.2961) 
+loving_lonlat_sf <- st_sfc(st_point(loving_lonlat), crs = 4326) %>%
+  st_transform("+proj=utm +zone=13 ellps=WGS84")
 
-wells_prod <- wells_prod %>% select(-c("spud_date", "completion_date", "first_prod_date", "last_prod_date", "Operator.Company.Name"))%>% 
-  mutate(distToLovi = mapply(distance_km_lov, uog_lon, uog_lat))
+wells_prod <- wells_prod %>%
+  st_as_sf(coords = c('uog_lon', 'uog_lat'), remove = F) %>%
+  st_set_crs(4326) %>%
+  st_transform("+proj=utm +zone=13 ellps=WGS84")
+
+wells_prod <- wells_prod %>%
+  mutate(distToLovi = c(drop_units(st_distance(wells_prod, loving_lonlat_sf)))/1000) %>% 
+  st_drop_geometry() %>%
+  select(-c("spud_date", "completion_date", "first_prod_date", "last_prod_date", "Operator.Company.Name"))
+
+# Look at only conventional drilling by drill_type == 'V'
+wells_prod_conv <- wells_prod %>%
+  filter(drill_type == 'V')
 ```
 
 ```{r}
@@ -319,11 +328,28 @@ wells_prod_viz_df <- wells_prod %>%
   summarise(type = min(type)) %>%
   distinct()
 
-wells_prod_viz_df %>% group_by(type)%>% summarise(n = n(), `n_50km` = sum(distToLovi<=50)) %>%
-  cbind(labels) %>% mutate(type=labels) %>% select(type, n, `n_50km`) %>%
+count_table <- wells_prod_viz_df %>% group_by(type)%>% 
+  summarise(n = n(), 
+            `n_50km` = sum(distToLovi<=50),
+            `n_40km` = sum(distToLovi<=40),
+            `n_30km` = sum(distToLovi<=30),
+            `n_20km` = sum(distToLovi<=20),
+            `n_10km` = sum(distToLovi<=10),
+            `n_5km` = sum(distToLovi<=5)) %>%
+  cbind(labels) %>% 
+  mutate(type=labels) %>% 
+  select(type, n, `n_50km`, `n_40km`, `n_30km`, `n_20km`, `n_10km`, `n_5km`) %>%
   add_row(tibble(type = 'Total', 
                  n = nrow(wells_prod_viz_df),
-                 `n_50km` = sum(wells_prod_viz_df$distToLovi <= 50)))
+                 `n_50km` = sum(wells_prod_viz_df$distToLovi <= 50),
+                 `n_40km` = sum(wells_prod_viz_df$distToLovi <= 40),
+                 `n_30km` = sum(wells_prod_viz_df$distToLovi <= 30),
+                 `n_20km` = sum(wells_prod_viz_df$distToLovi <= 20),
+                 `n_10km` = sum(wells_prod_viz_df$distToLovi <= 10),
+                 `n_5km` = sum(wells_prod_viz_df$distToLovi <= 5)))
+
+count_table
+write_csv(count_table, 'count_table.csv')
 ```
 
 ```{r}
@@ -387,6 +413,6 @@ c <- left_join(a, b) %>%
   select(-ends_with("_total"), -contains('_percent')) %>%
   bind_rows(total %>% mutate(across(contains('monthly'), as.character))) %>%
   arrange(prod_date)
-c
+write_csv(c, 'production_table.csv')
 ```
 
