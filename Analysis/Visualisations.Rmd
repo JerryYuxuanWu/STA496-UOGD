@@ -231,7 +231,7 @@ flare_v35_plot
  
 ```
 
-# Well location map (10KM) around
+# Well location map (50KM) around
 ```{r}
 # Part of code is copied from WellProcess.rmd
 wells_clean <- readRDS("../data/wells/cleaned_wells_cb.rds")
@@ -315,11 +315,11 @@ wells_prod_viz_df <- wells_prod %>%
   summarise(type = min(type)) %>%
   distinct()
 
-wells_prod_viz_df %>% group_by(type)%>% summarise(n = n(), `n_10km` = sum(distToLovi<=10)) %>%
-  cbind(labels) %>% mutate(type=labels) %>% select(type, n, `n_10km`) %>%
+wells_prod_viz_df %>% group_by(type)%>% summarise(n = n(), `n_50km` = sum(distToLovi<=50)) %>%
+  cbind(labels) %>% mutate(type=labels) %>% select(type, n, `n_50km`) %>%
   add_row(tibble(type = 'Total', 
                  n = nrow(wells_prod_viz_df),
-                 `n_10km` = sum(wells_prod_viz_df$distToLovi <= 10)))
+                 `n_50km` = sum(wells_prod_viz_df$distToLovi <= 50)))
 ```
 
 ```{r}
@@ -336,12 +336,12 @@ a <- wells_prod %>%
   )
 
 b <- wells_prod %>%
-  filter(distToLovi <= 10) %>%
+  filter(distToLovi <= 50) %>%
   group_by(prod_date, type) %>%
   filter(prod_date >= '2023-05-01', prod_date <= '2024-06-01') %>%
   summarize(
-    monthly_oil_10km = sum(monthly_oil, na.rm = T),
-    monthly_gas_10km = sum(monthly_gas, na.rm = T)
+    monthly_oil_50km = sum(monthly_oil, na.rm = T),
+    monthly_gas_50km = sum(monthly_gas, na.rm = T)
   ) %>%
   mutate(type = if_else(type == 1, 'Conventional', 'Unconventional')) %>%
   bind_rows(
@@ -358,12 +358,12 @@ total <- left_join(
     )
   ,
   wells_prod %>%
-    filter(distToLovi <= 10) %>%
+    filter(distToLovi <= 50) %>% 
     group_by(prod_date) %>%
     filter(prod_date >= '2023-05-01', prod_date <= '2024-06-01') %>%
     summarize(
-      monthly_oil_10km = sum(monthly_oil, na.rm = T),
-      monthly_gas_10km = sum(monthly_gas, na.rm = T)
+      monthly_oil_50km = sum(monthly_oil, na.rm = T),
+      monthly_gas_50km = sum(monthly_gas, na.rm = T)
     )
 ) %>%
   mutate(type = 'Total') %>%
@@ -374,12 +374,12 @@ c <- left_join(a, b) %>%
   left_join(total, join_by(prod_date), suffix = c("", "_total")) %>%
   mutate(oil_percent = round(monthly_oil/monthly_oil_total*100, 2),
          gas_percent = round(monthly_gas/monthly_gas_total*100, 2),
-         oil_percent_10km = round(monthly_oil_10km/monthly_oil_10km_total*100, 2),
-         gas_percent_10km = round(monthly_gas_10km/monthly_gas_10km_total*100, 2)) %>%
+         oil_percent_50km = round(monthly_oil_50km/monthly_oil_50km_total*100, 2),
+         gas_percent_50km = round(monthly_gas_50km/monthly_gas_50km_total*100, 2)) %>%
   mutate(monthly_oil = as.character(str_glue("{monthly_oil} ({oil_percent}%)")),
          monthly_gas = as.character(str_glue("{monthly_gas} ({gas_percent}%)")),
-         monthly_oil_10km = as.character(str_glue("{monthly_oil_10km} ({oil_percent_10km}%)")),
-         monthly_gas_10km = as.character(str_glue("{monthly_gas_10km} ({gas_percent_10km}%)"))) %>%
+         monthly_oil_50km = as.character(str_glue("{monthly_oil_50km} ({oil_percent_50km}%)")),
+         monthly_gas_50km = as.character(str_glue("{monthly_gas_50km} ({gas_percent_50km}%)"))) %>%
   select(-ends_with("_total"), -contains('_percent')) %>%
   bind_rows(total %>% mutate(across(contains('monthly'), as.character))) %>%
   arrange(prod_date)
