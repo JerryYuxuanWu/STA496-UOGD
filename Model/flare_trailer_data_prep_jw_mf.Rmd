@@ -123,18 +123,45 @@ Wells <- readRDS(paste0(wd,"../data/processed_data/WellsProcessed20250909.rds"))
 ```
 
 ```{r}
-wells_monthly <- Wells %>% group_by(substr(prod_date, 1, 7)) %>% 
-  mutate(inv_dist_well = ifelse(1 / distToLovi < 0.01, 0, 1 / distToLovi)) %>%
-  summarize(distToLovi_wells = mean(distToLovi),
-            inv_dist_wells = mean(inv_dist_well),
-            weighted_count_wells = sum(inv_dist_wells) * 100,
-            weighted_monthly_oil = sum(monthly_oil * inv_dist_well),
-            weighted_monthly_gas = sum(monthly_gas * inv_dist_well),
-            monthly_oil = sum(monthly_oil),
-            monthly_gas = sum(monthly_gas)) %>% 
-  rename(Month = `substr(prod_date, 1, 7)`)
+radius <- c(5, 10, 20, 30, 40, 50)
 
-
+for (i in 1:length(radius)){
+  if (i == 1){
+    wells_monthly <- Wells %>%
+      filter(distToLovi <= radius[i]) %>%
+      group_by(substr(prod_date, 1, 7)) %>%
+      mutate(inv_dist_well = ifelse(1 / distToLovi < 0.01, 0, 1 / distToLovi)) %>%
+      summarize(
+        distToLovi_wells = mean(n*distToLovi),
+        inv_dist_wells = mean(n*inv_dist_well),
+        weighted_count_wells = sum(inv_dist_wells) * 100,
+        weighted_monthly_oil = sum(monthly_oil * inv_dist_well),
+        weighted_monthly_gas = sum(monthly_gas * inv_dist_well),
+        monthly_oil = sum(monthly_oil),
+        monthly_gas = sum(monthly_gas)
+      ) %>%
+      rename(Month = `substr(prod_date, 1, 7)`) %>%
+      rename_with(~paste0(.x, '_', radius[i]), -Month)
+  } else{
+    wells_monthly <- left_join(
+    wells_monthly,
+    Wells %>%
+      filter(distToLovi <= radius[i]) %>%
+      group_by(substr(prod_date, 1, 7)) %>%
+      mutate(inv_dist_well = ifelse(1 / distToLovi < 0.01, 0, 1 / distToLovi)) %>%
+      summarize(
+        distToLovi_wells = mean(n*distToLovi),
+        inv_dist_wells = mean(n*inv_dist_well),
+        weighted_count_wells = sum(inv_dist_wells) * 100,
+        weighted_monthly_oil = sum(monthly_oil * inv_dist_well),
+        weighted_monthly_gas = sum(monthly_gas * inv_dist_well),
+        monthly_oil = sum(monthly_oil),
+        monthly_gas = sum(monthly_gas)
+      ) %>%
+      rename(Month = `substr(prod_date, 1, 7)`) %>%
+      rename_with(~paste0(.x, '_', radius[i]), -Month))
+  }
+}
 ```
 
 #### Flare Data

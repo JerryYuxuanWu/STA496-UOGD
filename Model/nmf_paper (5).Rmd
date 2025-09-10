@@ -21,7 +21,7 @@ library(gridExtra)
 - these data are all of the merged trailer data VOCs at 10 minutes within an hour, matched with the other compounds at that 10 minutes.
 
 ```{r warning=FALSE, message=FALSE}
-hourly_data <- readRDS("../data/processed_data/TrailerProcessed-20240601.rds")
+hourly_data <- readRDS("../data/processed_data/TrailerProcessed20250909.rds")
 
 # restrict to study period, make mountain time
 hourly_data <- hourly_data %>% rename('co2' = 'co2_ppm')  %>%
@@ -283,31 +283,82 @@ weight_matrix <- 1/uncertainty_matrix
 
 ```
 
+# NMF
+## Custom function to run NMF for different specs
+```{r}
+fit_nmf <- function(data, components, method, seed, uncertainty="") {
+  print(str_glue("Fitting NMF with {method} method, {seed} seed..."))
+  start_time <- Sys.time()
+  if (str_equal(method, 'lee', ignore_case = T)) {
+    if (str_equal(seed, 'nndsvd')) {
+      nmf <- nmf(
+        data,
+        rank = components,
+        nrun = 1,
+        method = 'lee',
+        seed = 'nndsvd'
+      )
+    } else {
+      nmf <- nmf(
+        data,
+        rank = components,
+        nrun = 30,
+        method = 'lee',
+        seed = seed
+      )
+    }
+  } else if (str_equal(method, 'ls-nmf', ignore_case = T)) {
+    if (str_equal(seed, 'nndsvd')) {
+      nmf <- nmf(
+        data,
+        rank = components,
+        nrun = 1,
+        method = 'ls-nmf',
+        weight = weight_matrix,
+        seed = 'nndsvd'
+      )
+    } else {
+      nmf <- nmf(
+        data,
+        rank = components,
+        nrun = 30,
+        method = 'ls-nmf',
+        weight = weight_matrix,
+        seed = seed
+      )
+    }
+  }
+  end_time <- Sys.time()
+  print(str_glue("Execution completed in {end_time - start_time} minutes"))
+  return(nmf)
+}
+```
+
+## NMF + random seed
+```{r}
+# Run nmf with 4:8 components and random seed
+nmf_random <- fit_nmf(normalized_matrix_less_o3, 4:8, 'lee', 123)
+saveRDS(nmf_random, 'result_rfiles/nmf_random.rds')
+```
+
+## LS-NMF + nndsvd seed
+```{r}
+# Run nmf with 4:8 components and nndsvd seed
+nmf_nndsvd <- fit_nmf(normalized_matrix_less_o3, 4:8, 'lee', 'nndsvd')
+saveRDS(nmf_nndsvd, 'result_rfiles/nmf_nndsvd.rds')
+```
+
 ## LS-NMF + nndsvd seed
 ```{r, warning = FALSE}
-# Run nmf with 4:10 components and nndsvd seed
-# start_time_lsnmf_nndsvd <- Sys.time()
-# 
-components <- 4:5
- lsnmf_nndsvd_less_o3 <- nmf(
-   normalized_matrix_less_o3,
-   rank = components,
-   nrun = 1, # since using nndsvd
-   method = "ls-nmf",
-   weight = weight_matrix,
-   seed = 'nndsvd'
- )
-# 
-# end_time_lsnmf_nndsvd <- Sys.time()
-# end_time_lsnmf_nndsvd-start_time_lsnmf_nndsvd
-# 1.34 minutes to run the above
-# # 
+# Run nmf with 4:8 components and nndsvd seed
+
 # saveRDS(lsnmf_nndsvd_less_o3,
 #         'lsnmf_nndsvd_less_o3.rds')
 
 #lsnmf_nndsvd_less_o3 <- readRDS('lsnmf_nndsvd_less_o3.rds')
 ```
 
+## LS-NMF + nndsvd seed
 
 #### Extract matrices
 

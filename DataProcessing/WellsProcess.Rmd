@@ -90,11 +90,13 @@ wells_prod_conv_0301 %>% group_by(prod_date) %>%
 ```{r}
 # Group by date and dist
 wells_prod_0301 <- wells_prod_0301 %>% group_by(prod_date, distToLovi) %>% 
-  summarize(monthly_oil = sum(monthly_oil),
+  summarize(n = n(),
+            monthly_oil = sum(monthly_oil),
             monthly_gas = sum(monthly_gas))
 
 wells_prod_conv_0301 <- wells_prod_conv_0301 %>% group_by(prod_date, distToLovi) %>% 
-  summarize(monthly_oil = sum(monthly_oil),
+  summarize(n = n(),
+            monthly_oil = sum(monthly_oil),
             monthly_gas = sum(monthly_gas))
 ```
 

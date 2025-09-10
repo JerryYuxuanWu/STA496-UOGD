@@ -288,7 +288,10 @@ colors <- c('Red', 'Green', 'Blue', 'Purple')
 
 wells_prod_viz_df <- split(wells_prod_viz_df, wells_prod_viz_df$type)
 
-l <- leaflet() %>%
+l <- leaflet(options = leafletOptions(zoomControl = TRUE,
+                                 zoomSnap = 0.1,
+                                 zoomDelta = 0.1,
+                                 wheelPxPerZoomLevel = 120)) %>%
   addProviderTiles("Esri.WorldImagery") %>% 
   addProviderTiles("CartoDB.PositronOnlyLabels")
 
@@ -317,7 +320,13 @@ l <- l %>%
   addScaleBar(
   position = c("bottomright"),
   options = scaleBarOptions()
-)
+) %>%
+  addCircles(lng = loving_lonlat[1],
+             lat = loving_lonlat[2],
+             col= 'Yellow', 
+             weight = 1,
+             fillOpacity = 1,
+             radius = 500)
 l
 saveWidget(l, file="well_map.html")
 ```
