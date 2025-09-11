@@ -344,9 +344,11 @@ nmf_factor_night <- nmf_factor_hourly %>%
 radius <- c(5, 10, 20, 30, 40, 50)
 
 full_merged <- trailer_daily %>%
-  left_join(trailer_night_avg, join_by(day_mountain), 
-              suffix = c('.day', '.night')) %>%
-  left_join(flaring_daily, join_by(day_mountain==date)) %>%
+  left_join(trailer_night_avg, 
+            join_by(day_mountain), 
+            suffix = c('.day', '.night')) %>%
+  left_join(flaring_daily, 
+            join_by(day_mountain==date)) %>%
   mutate(yearmonth = format(day_mountain, '%Y-%m')) %>%
   left_join(wells_monthly, join_by(yearmonth == Month)) %>%
   left_join(nmf_factor_day, join_by(day_mountain)) %>%
@@ -362,15 +364,14 @@ for (r in radius) {
     
   new_colnames <- paste0(c('flare_wd_day_', 'flare_wd_night_'), r)
   
+  # Create number of flares in upwind direction day and night.
   flare_is_from_wd <- temp %>% 
     left_join(trailer_daily, join_by(date==day_mountain)) %>%
     left_join(trailer_night_avg, join_by(date==day_mountain), 
               suffix = c('.day', '.night')) %>%
   group_by(date) %>%
   summarise(flare_wd_day = sum(abs(angle - wdr_deg.day) <= 30, na.rm=T),
-            flare_wd_night = sum(abs(angle - wdr_deg.night) <= 30, na.rm=T),
-            methane_eq = median(methane_eq, na.rm=T),
-            imputed_methane_eq = median(imputed_methane_eq, na.rm=T)) %>%
+            flare_wd_night = sum(abs(angle - wdr_deg.night) <= 30, na.rm=T)) %>%
   rename(setNames(c('flare_wd_day', 'flare_wd_night'), new_colnames))
   
 full_merged <- full_merged %>%

@@ -11,6 +11,8 @@ library(zoo)
 library(htmlwidgets)
 library(openair)
 library(leaflet)
+library(sf)
+library(units)
 ```
 
 # Load in merged data
@@ -303,7 +305,7 @@ names(wells_prod_viz_df) %>%
                  label=~as.character(api),
                  popup=~as.character(api),
                  fillColor = colors[as.numeric(df)],
-                 stroke = T,  radius = 125, weight = 1, 
+                 stroke = T,  radius = 200, weight = 1, 
                  col= colors[as.numeric(df)], fillOpacity = 1,
                  group = labels[as.numeric(df)],
                  labelOptions = labelOptions(noHide = FALSE, direction = 'auto'))
@@ -312,11 +314,7 @@ names(wells_prod_viz_df) %>%
 l <- l %>%
   addLegend(colors = colors, 
           labels = labels,
-          position = 'bottomleft') %>%
-  addLayersControl(
-    overlayGroups = labels,
-    options = layersControlOptions(collapsed = FALSE)
-  ) %>%
+          position = 'topright') %>%
   addScaleBar(
   position = c("bottomright"),
   options = scaleBarOptions()
@@ -326,7 +324,13 @@ l <- l %>%
              col= 'Yellow', 
              weight = 1,
              fillOpacity = 1,
-             radius = 500)
+              radius = 500) # %>%
+  # addCircles(lng = loving_lonlat[1],
+  #            lat = loving_lonlat[2],
+  #            col= 'Yellow', 
+  #            weight = 1,
+  #            fillOpacity = 0,
+  #            radius = 50000)
 l
 saveWidget(l, file="well_map.html")
 ```
