@@ -1,0 +1,719 @@
+---
+title: "NMF comparisons"
+author: "Jerry"
+date: "`r Sys.Date()`"
+geometry: margin=1cm
+output:
+  pdf_document: default
+  html_document:
+    df_print: paged
+classoption: landscape
+---
+
+```{r setup, include=FALSE}
+#knitr::opts_knit$set(root.dir = "/Users/meredith/Library/CloudStorage/GoogleDrive-mereditf@usc.edu/Shared drives/HEI Energy")
+# load the packages
+library(NMF)
+library(tidyverse)
+library(readxl)
+library(grid)
+library(gridExtra)
+library(RColorBrewer)
+library(patchwork)
+knitr::opts_chunk$set(echo = F,
+                      message = F)
+```
+
+
+# Data Cleaning
+
+- these data are all of the merged trailer data VOCs at 10 minutes within an hour, matched with the other compounds at that 10 minutes.
+
+```{r warning=FALSE, message=FALSE}
+hourly_data <- readRDS("../data/processed_data/TrailerProcessed20250909.rds")
+
+# restrict to study period, make mountain time
+hourly_data <- hourly_data %>% rename('co2' = 'co2_ppm')  %>%
+  mutate(datetime_mountain = with_tz(as.POSIXct(time_utc, tz = 'UTC', 
+                                                format = "%Y-%m-%d %H:%M:%OS"), 
+                                     tzone = "America/Denver")) %>%
+  filter(date(datetime_mountain) >= '2023-05-01'& date(datetime_mountain)<='2024-05-31')%>%
+  arrange(datetime_mountain)%>%
+  mutate(daytime = ifelse(hour(datetime_mountain) >= 11 & hour(datetime_mountain) <= 17, 1, 0))
+
+
+hourly_data$total_radioactivity<-hourly_data$radon_B+hourly_data$rd_particle_B
+
+#colMeans(!is.na(hourly_data)) * 100
+
+#hist(hourly_data$total_radioactivity, breaks=150, xlim=c(0,5))
+#hist(hourly_data$total_radioactivity, breaks=75)
+#hist(hourly_data$ethene, breaks=55)
+# remove butadiene ouliers 5-7 points
+hourly_data<-hourly_data[hourly_data$`1_3-butadiene`<=0.1,]
+#hourly_data<-hourly_data[hourly_data$ethene<10,]
+#plot(hourly_data$ethene,hourly_data$`1_3-butadiene`)
+```
+
+```{r}
+vocs <- c("ethane", "ethene", "propane", "propene",
+                                        "1_3-butadiene", "i-butane", "n-butane",
+                                        "acetylene", "cyclopentane", "i-pentane",
+                                        "n-pentane", "n-hexane", "isoprene", "n-heptane",
+                                        "benzene", "n-octane", "toluene", "ethyl-benzene", 
+                                        "m&p-xylene", "o-xylene")
+
+
+non_vocs <- c('ch4', 'co2', 'co', 'h2s', 'so2', 'nox', 'o3','total_radioactivity')
+
+# remove row with missing obs for any chemical
+hourly_nona <- hourly_data %>% 
+  select(any_of(c('time_utc', 'daytime', vocs, non_vocs, 'wdr_deg', 'wsp_ms'))) %>% 
+  na.omit()
+
+# retrieving the vocs, removing everything else except the vocs
+hourly_vocs <- hourly_nona %>% select(any_of(vocs))
+
+# retrieving the non-vocs: co2_ppm, nox, ch4, h2s, so2, o3
+# double check this
+hourly_non_vocs <- hourly_nona %>% select(any_of(non_vocs)) 
+
+hourly_full_nona <- cbind(hourly_non_vocs, hourly_vocs)
+
+# retrieve a vector of yearmonth
+#hourly_dates <- hourly_nona %>% 
+#  mutate(yearmonth = substring(day, 0, 7)) %>%
+#  pull(yearmonth)
+``` 
+
+
+## Limits of detection
+- Limits of detection are defined by the instrument and can be found in Table 1a of the final report
+- Note we are using 20 ppb for CO rather than 30 ppb per guidance from Gunnar
+
+```{r, message = FALSE}
+# Define LOD for each chemical
+LOD_non_voc <- c('ch4' = 0.9, 
+             'co2' = 0.0433, 
+             'co' = 20,
+             'h2s' = 0.4, 
+             'so2' = 0.4,
+             'nox' = 0.05, 
+             'o3' = 1,
+             'total_radioactivity'=4) # change to 2 for radon and particle separate, 4 for the total
+
+
+#LOD_voc_avg <- read_xlsx('/Users/meredith/Library/CloudStorage/GoogleDrive-mereditf@usc.edu/Shared drives/HEI #Energy/data/final data/LNM_Finalized_Data/LNM_VOC_Uncertainties.xlsx', skip = 1)
+LOD_voc_avg <- read_xlsx('../data/LNM_VOC_Uncertainties.xlsx', skip = 1)
+LOD_voc_avg <- LOD_voc_avg %>%
+  select(1, 4) %>%
+  rename('LOD' = 2, 'chemical' = 1) %>%
+  head(20)
+```
+
+## Background concentration correction
+
+- we take the minimum concentration for each compound as the background value
+- adjustments made according to paper: Gunnar's 2018 paper section 2.2 and Guha 2015 section 3.3
+- Check whether chemical has background noise level that needs to be removed
+- NO ADJUSTMENT if minimum value < 2xLOD and maximum value > 100xLOD
+
+```{r echo=FALSE}
+# find the min for background-levels
+background_levels <- sapply(hourly_full_nona, min)
+```
+
+```{r}
+adjusting_neg_bg_from_lod <- function(chemical, LOD, background, hourly_data){ 
+    # get min and max
+    min_value <- min(hourly_data[chemical], na.rm = TRUE)
+    max_value <- max(hourly_data[chemical], na.rm = TRUE)
+    # if min less than double LOD or max > 100 times LOD
+    # we don't want to adjust for background so background is 0
+    if (min_value < 2 * LOD & max_value > 100 * LOD ){
+      return (0)
+    }
+  return (background)
+}
+```
+
+```{r}
+background_lod_non_voc <- tibble(chemical = non_vocs,
+                                 LOD = LOD_non_voc,
+                                 background = unname(background_levels[non_vocs]))
+
+adjusted_background_non_voc <- background_lod_non_voc %>%
+  rowwise() %>%
+  mutate(min = min(hourly_full_nona[chemical], na.rm = TRUE),
+         LODx2 = 2 * LOD,
+         criterion1 = min(hourly_full_nona[chemical], na.rm = TRUE) < 2 * LOD,
+         max = max(hourly_full_nona[chemical], na.rm = TRUE),
+         LODx100 = 100 * LOD,
+         criterion2 = max(hourly_full_nona[chemical], na.rm = TRUE) > 100 * LOD,
+         adjusted_background = adjusting_neg_bg_from_lod(chemical, LOD, background, 
+                                                         hourly_full_nona))
+```
+
+
+```{r message=FALSE, warning=FALSE}
+background_lod_voc <- LOD_voc_avg %>%
+  left_join(tibble(chemical = setdiff(names(background_levels), non_vocs),
+                   background = background_levels[setdiff(names(background_levels), 
+                                                          non_vocs)]))
+adjusted_background_voc <- background_lod_voc %>%
+  rowwise() %>%
+  mutate(min = min(hourly_full_nona[chemical], na.rm = TRUE),
+         LODx2 = 2 * LOD,
+         criterion1 = min(hourly_full_nona[chemical], na.rm = TRUE) < 2 * LOD,
+         max = max(hourly_full_nona[chemical], na.rm = TRUE),
+         LODx100 = 100 * LOD,
+         criterion2 = max(hourly_full_nona[chemical], na.rm = TRUE) > 100 * LOD,
+         adjusted_background = adjusting_neg_bg_from_lod(chemical, LOD, background, 
+                                                         hourly_full_nona))
+```
+
+```{r}
+# So now we have the adjusted background concentrations
+hourly_nona_bgrm <- hourly_full_nona %>%
+  mutate(across(adjusted_background_non_voc$chemical, 
+                ~  .x - adjusted_background_non_voc$adjusted_background[
+                    adjusted_background_non_voc$chemical == cur_column()]))
+hourly_nona_bgrm <- hourly_nona_bgrm %>%
+  mutate(across(adjusted_background_voc$chemical, 
+                ~  .x - adjusted_background_voc$adjusted_background[
+                    adjusted_background_voc$chemical == cur_column()]))
+```
+
+
+```{r}
+set.seed(123)
+replace_zero_with_random <- function(column, name, LOD_df){
+  LOD <- LOD_df$LOD[LOD_df$chemical == name]
+  column <- if_else(column == 0, round(runif(length(column), 0, 0.5 * LOD), 3), column)
+  return (column)
+}
+
+hourly_nona_bgrm_zerorepl <- hourly_nona_bgrm %>%
+  mutate(across(adjusted_background_non_voc$chemical,
+                ~ replace_zero_with_random(.x, cur_column(), adjusted_background_non_voc)))
+
+hourly_nona_bgrm_zerorepl <- hourly_nona_bgrm_zerorepl %>%
+  mutate(across(adjusted_background_voc$chemical,
+                ~ replace_zero_with_random(.x, cur_column(), adjusted_background_voc)))
+```
+
+## Normalize the data 
+
+```{r}
+#normalizing function
+normalize_column <- function(column){
+  background <- quantile(column, 0)
+  max <- quantile(column, 1) # this could be adjusted
+  return ((column - background)/(max - background))
+}
+```
+
+```{r}
+# normalize all
+hourly_nona_bgrm_zerorepl_norm <- as_tibble(sapply(as.list(hourly_nona_bgrm_zerorepl),
+                                                   normalize_column))
+```
+
+
+```{r}
+normalized_matrix <- as.matrix(hourly_nona_bgrm_zerorepl_norm)
+```
+
+## Remove Ozone
+```{r}
+normalized_matrix_less_o3 <- normalized_matrix[ ,setdiff(colnames(normalized_matrix), "o3")]
+```
+
+# Compute NMF
+## Compute uncertainty/weights matrix
+```{r warning=FALSE, message=FALSE}
+# compute uncertainty matrix (inverse of it for NMF)
+# Based on the Guha paper
+
+uncertainty_matrix <- matrix(0, nrow = nrow(normalized_matrix_less_o3), 
+                        ncol = ncol(normalized_matrix_less_o3))
+LOD_merged <- tibble(chemical = c(adjusted_background_non_voc$chemical, 
+                                  adjusted_background_voc$chemical),
+                     LOD = c(adjusted_background_non_voc$LOD, 
+                             adjusted_background_voc$LOD))
+
+LOD_merged <- tibble(chemical = names(hourly_nona_bgrm_zerorepl_norm)) %>%
+  left_join(LOD_merged) %>%
+  filter(chemical %in% colnames(normalized_matrix_less_o3))
+
+# creating uncertainty Matrix
+for (i in 1:dim(uncertainty_matrix)[1]) { 
+  for (j in 1:dim(uncertainty_matrix)[2]) {
+    chemical <- colnames(normalized_matrix_less_o3)[j]
+    xij <- normalized_matrix_less_o3[i, j]
+    LOD <- LOD_merged$LOD[LOD_merged$chemical == chemical]
+    # Get LOD value for this row 
+    # Based on Guha Eq6, Eq5a, EQ5c
+    # if (j == 1) { 
+    #   # based on equation 6, we sqrt ch4 (at column = 1) and times by 1
+    #   uncertainty_matrix[i, j] <- sqrt(xij)
+    # } else if (j == 2) {
+    #   # 0.25 for co2 
+    #   uncertainty_matrix[i, j] <- 0.25 * sqrt(xij)
+    # } else if (j == 3) { 
+    #   # 0.5 for CO
+    #   uncertainty_matrix[i, j] <- 0.5 * sqrt(xij)
+    # } else if (xij <= LOD) {
+    #   uncertainty_matrix[i, j] <- 2 * LOD # equation 5a) in reference paper
+    # } else {
+    #   uncertainty_matrix[i, j] <- sqrt(((0.1 * xij)**2 + LOD**2))  #equation 5c) in reference paper
+    # }
+    
+    # Based on Guha Eq5a, EQ5c
+    if (xij <= LOD) {
+      uncertainty_matrix[i, j] <- 2 * LOD # equation 5a) in reference paper
+    } else {
+      uncertainty_matrix[i, j] <- sqrt(((0.1 * xij)**2 + LOD**2))  #equation 5c) in reference paper
+    }
+  }
+}
+
+# Each element of uncertainty matrix is s_ij, computed according to Guha's equations
+```
+
+### Inverse uncertainty matrix
+In the NMF library, weight is defined as 1/s_ij, at least from what their code look like. 
+From the code, WRSS is computed using:
+sum( ((X - fitted(object)) * weight)^2 , na.rm = TRUE)/2
+This only matches the regular WRSS form if weight is 1/s_ij
+```{r}
+# Convert zero uncertainties to the next smallest uncertainty of the corresponding compound
+# Note: There shouldn't be any 0 uncertainties
+uncertainty_matrix[uncertainty_matrix==0]<-apply(uncertainty_matrix, 2, function(x) sort(x)[2])
+
+# THIS NEEDS TO BE CHECKED IF WE WANT TO TAKE RECIPROCAL FOR EACH ELEMENT
+# CURRENT RESULTS IS WHEN WEIGHT = UNCERTAINTY
+# NOT POSSIBLE TO DO SIMPLY TAKE RECIPROCAL SINCE THERE'RE 0 UNCERTAINTIES
+weight_matrix <- 1/uncertainty_matrix 
+
+# Each element of the weight matrix is 1/s_ij
+```
+
+## Custom function to run NMF for different specs
+```{r}
+fit_nmf <- function(data, components, method, seed, weight="") {
+  print(str_glue("Fitting NMF with {method} method, {seed} seed..."))
+  start_time <- Sys.time()
+  if (str_equal(method, 'lee', ignore_case = T)) {
+    if (str_equal(seed, 'nndsvd')) {
+      nmf <- nmf(
+        data,
+        rank = components,
+        nrun = 1,
+        method = 'lee',
+        seed = 'nndsvd'
+      )
+    } else {
+      nmf <- nmf(
+        data,
+        rank = components,
+        nrun = 30,
+        method = 'lee',
+        seed = seed
+      )
+    }
+  } else if (str_equal(method, 'ls-nmf', ignore_case = T)) {
+    if (str_equal(seed, 'nndsvd')) {
+      nmf <- nmf(
+        data,
+        rank = components,
+        nrun = 1,
+        method = 'ls-nmf',
+        weight = weight,
+        seed = 'nndsvd'
+      )
+    } else {
+      nmf <- nmf(
+        data,
+        rank = components,
+        nrun = 30,
+        method = 'ls-nmf',
+        weight = weighti,,
+        seed = seed
+      )
+    }
+  }
+  end_time <- Sys.time()
+  print(end_time - start_time)
+  return(nmf)
+}
+```
+
+### Define global variables
+```{r}
+factors <- 4:8
+```
+
+### NMF + random seed
+```{r}
+# Run nmf with 4:8 components and random seed
+# nmf_random <- fit_nmf(normalized_matrix_less_o3, factors, 'lee', 123)
+# saveRDS(nmf_random, 'result_rfiles/nmf_random.rds')
+
+# Time difference of 1.732458 mins
+# If above is ran before, read instead
+nmf_random <- readRDS('result_rfiles/nmf_random.rds')
+```
+
+### NMF + nndsvd seed
+```{r}
+# Run nmf with 4:8 components and nndsvd seed
+# nmf_nndsvd <- fit_nmf(normalized_matrix_less_o3, factors, 'lee', 'nndsvd')
+# saveRDS(nmf_nndsvd, 'result_rfiles/nmf_nndsvd.rds')
+
+# Time difference of 12.74161 secs
+# If above is ran before, read instead
+nmf_nndsvd <- readRDS('result_rfiles/nmf_nndsvd.rds')
+```
+
+### LS-NMF + random seed
+```{r, warning = FALSE}
+# Run ls-nmf with 4:8 components and random seed
+# lsnmf_random <- fit_nmf(normalized_matrix_less_o3, factors, 'ls-nmf', 123, weight_matrix)
+# saveRDS(lsnmf_random, 'result_rfiles/lsnmf_random.rds')
+
+# Time difference of 11.02647 mins
+
+# If above is ran before, read instead
+lsnmf_random <- readRDS('result_rfiles/lsnmf_random.rds')
+```
+
+### LS-NMF + nndsvd seed
+```{r}
+# Run ls-nmf with 4:8 components and nndsvd seed
+# lsnmf_nndsvd <- fit_nmf(normalized_matrix_less_o3, factors, 'ls-nmf', 'nndsvd', weight_matrix)
+# saveRDS(lsnmf_nndsvd, 'result_rfiles/lsnmf_nndsvd.rds')
+# 
+# Time difference of 50.44826 secs
+
+# If above is ran before, read instead
+lsnmf_nndsvd <- readRDS('result_rfiles/lsnmf_nndsvd.rds')
+```
+
+# Compare NMF
+## Variables for renaming
+```{r}
+# Capitalized labels
+chemical_labels <- c(
+  "ethane" = "Ethane", "propane" = "Propane", "i-butane" = "i-Butane", "n-butane" = "n-Butane", 
+  "i-pentane" = "i-Pentane", "n-pentane" = "n-Pentane", "n-hexane" = "n-Hexane", 
+  "cyclopentane" = "Cyclopentane", "n-heptane" = "n-Heptane", "n-octane" = "n-Octane",
+  "ethene" = "Ethene", "propene" = "Propene", "1_3-butadiene" = "1,3-Butadiene", "isoprene" = "Isoprene",
+  "acetylene" = "Acetylene",
+  "benzene" = "Benzene", "toluene" = "Toluene", "ethyl-benzene" = "Ethyl-Benzene", 
+  "o-xylene" = "o-Xylene", "m&p-xylene" = "m&p-Xylene",
+  "co" = "CO", "co2" = "CO2", "nox" = "NOx",
+  "h2s" = "H2S", "so2" = "SO2", "o3" = "O3", "ch4" = "CH4", "total_radioactivity"="Radioactivity"
+)
+
+# Define the desired order of chemicals
+desired_order <- c(
+  # NMHCs - Alkanes
+  "ethane", "propane", "i-butane", "n-butane", "i-pentane", "n-pentane", 
+  "n-hexane", "cyclopentane", "n-heptane", "n-octane",
+  
+  # NMHCs - Alkenes
+  "ethene", "propene", "1_3-butadiene", 'isoprene',
+  
+  # NMHCs - Alkynes
+  "acetylene",
+  
+  # NMHCs - Aromatics
+  "benzene", "toluene", "ethyl-benzene", "o-xylene", "m&p-xylene",
+  
+  # Inorganic Gases - CO and CO2
+  "co", "co2",
+  
+  # Nitrogen Oxides (NOx)
+  "nox",
+  
+  # Sulfur Compounds
+  "h2s", "so2",
+  
+  # Ozone (if included)
+  "o3",
+  
+  # Methane
+  "ch4",
+  
+  # Radioactivity
+  "total_radioactivity"
+)
+
+color_pal <- brewer.pal(8, 'Accent')
+```
+
+## Source Contribution Plot
+```{r}
+# Write the function to crease source contribution plot
+get_source_contribution_plot <- function(model, title){
+  # Get H where X = WH
+  H <- coef(model) # k x n source contribution
+
+  # Convert H to a data frame for ggplot
+  H <- as.data.frame(H)
+  
+  # Add a column for factor number
+  H$Factor <- rownames(H)
+  
+  # reshape data to long format
+  H_long <- pivot_longer(H, 
+                         cols = -Factor, 
+                         names_to = "Chemical", 
+                         values_to = "Contribution")
+  
+  # Now we want to plot all of them together. 
+  # Create individual plots and patch together.
+  plots <- list()
+  for (factor in 1:nrow(H)) {
+    factor_data <- subset(H_long, Factor == factor) %>%
+      mutate(
+        Chemical = factor(Chemical, levels = desired_order),
+        ChemicalLabel = dplyr::recode(Chemical, !!!chemical_labels)
+      )
+    
+    plot <- ggplot(factor_data, aes(x = ChemicalLabel, y = Contribution)) +
+      geom_bar(stat = "identity",
+               position = "dodge",
+               fill = color_pal[factor],
+               color = 'black',
+               size = 0.05,
+               width = 0.75) +
+      # geom_text(
+      #   aes(label = sprintf("%.2f", round(Contribution, 2))),
+      #   position = 'jitter',
+      #   color = "blue",
+      #   size = 3,
+      #   vjust = -0.5
+      # ) +
+      coord_cartesian(clip = "off") +
+      theme_minimal() +
+      theme(
+        axis.text.x = element_text(angle = 45, margin = margin(t = 5), size = 3),
+        text = element_text(size = 6),
+        plot.title = element_text(size = 8),
+        plot.margin = margin(
+          t = 20,
+          r = 10,
+          b = 10,
+          l = 10
+        )
+      ) +
+      theme(axis.title.y = element_blank(), 
+            axis.title.x = element_blank())
+    
+    # If this is the top plot, add title to denote which model this is coming from
+    if (factor == 1){
+      plot <- plot +
+        labs(title = paste0(model@method, ' ', model@seed))
+    }
+    # Now, if this isn't the last plot, strip y-axis text/ticks
+    # If it is the last, only strip the titles as done above
+    if (factor != nrow(H)){
+      plot <- plot + 
+        theme(axis.text.x = element_blank(), 
+              axis.ticks.x = element_blank())
+    }
+    
+    # Store this plot in a list
+    plots[[factor]] <- plot
+  }
+  
+  # Create a vertical label as a patchwork-compatible element
+  #y_axis_label <- wrap_elements(full = textGrob("Contribution", rot = 90, gp = gpar(fontsize = 16)))
+  
+  # Stack the plots
+  stacked_plots <- wrap_plots(plots, ncol = 1)
+  
+  # Combine y-axis label and plots side by side
+  # final_plot <- y_axis_label | stacked_plots
+  final_plot <- stacked_plots
+  
+  # Set layout widths and add shared x-axis label
+  final_plot <- final_plot  &
+    theme(
+      plot.margin = unit(c(0,0.05,0.1,0), "cm"),
+      axis.text.y = element_text(size = 3),
+      plot.title = element_text(size = 6)
+    )
+  return(final_plot)
+}
+```
+
+## Variance
+
+```{r}
+# Additive Variance based on order in result
+get_variance_ordered <- function(model){
+  # Number of factors
+  k <- nrow(coef(model))
+  
+  # Compute WTSS of the original data matrix
+  reconstruct<-fitted(model)
+  wtss <- sum(weight_matrix^2 * (normalized_matrix_less_o3 - mean(normalized_matrix_less_o3))^2)
+  
+  # Compute variance explained by adding each factor at a time
+  # in the order it appeared in the result
+  W <- basis(model)
+  H <- coef(model)
+  variance_explained_factors <- rep(NA, k)
+  reconstruction <- matrix(0, nrow = nrow(basis(model)), ncol = ncol(coef(model)))
+  for (i in 1:k){
+    # Add the i-th factor to the reconstruction
+    reconstruction <- reconstruction + (W[, i, drop=FALSE] %*% H[i, , drop=FALSE])
+    
+    # Compute Residual Sum of Squares (RSS)
+    wrss_temp <- sum(weight_matrix^2 * (normalized_matrix_less_o3 - reconstruction)^2)
+      
+    # Compute Variance Explained by adding this factor
+    variance_explained_factors[i] <- 1 - (wrss_temp / wtss)
+  }
+  return(variance_explained_factors)
+}
+
+# LOO Variance explained
+get_loo_variance <- function(model){
+  # Number of factors
+  k <- nrow(coef(model))
+  
+  # Compute WTSS of the original data matrix
+  reconstruct<-fitted(model)
+  wtss <- sum(weight_matrix^2 * (normalized_matrix_less_o3 - mean(normalized_matrix_less_o3))^2)
+  wrss <- sum(weight_matrix^2 * (normalized_matrix_less_o3 - reconstruct)^2)
+  variance_explained <- 1 - (wrss / wtss)
+
+  # call it leave-one-out variance explained
+  W <- basis(model)
+  H <- coef(model)
+  variance_explained_factors_loo <- numeric(4)
+  for (i in 1:k) {
+    # Compute reconstruction from the 4 factors (without the i-th)
+    reconstruction_loo <- (W[, -i, drop=FALSE] %*% H[-i, , drop=FALSE])
+    
+    # Compute Residual Sum of Squares (RSS)
+    wrss_temp <- sum(weight_matrix^2 * (normalized_matrix_less_o3 - reconstruction_loo)^2)
+    
+    # Compute Variance Explained without this factor
+    variance_explained_trad_loo <- 1 - (wrss_temp / wtss)
+    
+    # Compute Variance Explained gained from adding this factor
+    variance_explained_factors_loo[i] <- variance_explained - variance_explained_trad_loo
+  }
+  return(variance_explained_factors_loo)
+}
+
+plot_variance_explained <- function(model) {
+  variance_explained_factors <- get_variance_ordered(model)
+  variance_explained_diff <- c(variance_explained_factors[1],
+                               diff(variance_explained_factors))
+  
+  plot <- tibble(
+    factor = c(1:length(variance_explained_factors)),
+    fac_var_exp = variance_explained_diff,
+    tot_var_exp = variance_explained_factors
+  ) %>%
+    ggplot() +
+    geom_col(aes(x = factor, y = fac_var_exp), width = 0.5) +
+    geom_line(aes(x = factor, y = tot_var_exp)) +
+    geom_point(aes(x = factor, y = tot_var_exp)) +
+    geom_text(
+      aes(
+        x = factor,
+        y = fac_var_exp,
+        label = sprintf("%.2f", round(fac_var_exp, 2))
+      ),
+      size = 2,
+      vjust = -0.5
+    ) +
+    coord_cartesian(ylim = c(0, 1)) +
+    labs(title = paste0(model@method, ' ', model@seed)) +
+    theme_bw() +
+    theme(axis.title.x = element_blank(),
+          axis.title.y = element_blank())
+  return(plot)
+}
+
+plot_loo_variance <- function(model){
+  k <- nrow(coef(model))
+  
+  variance_explained_factors_loo <- get_loo_variance(model)
+  
+  # order <- sapply(1:k, function(i) which(variance_explained_factors_loo==sort(variance_explained_factors_loo, decreasing = T)[i]))
+
+  plot <- tibble(
+    factor = c(1:length(variance_explained_factors_loo)),
+    fac_loo_var_exp = variance_explained_factors_loo
+  ) %>%
+    ggplot() +
+    geom_col(aes(x = factor, y = fac_loo_var_exp)) +
+    geom_text(
+      aes(
+        x = factor,
+        y = fac_loo_var_exp,
+        label = sprintf("%.2f", round(fac_loo_var_exp, 2))
+      ),
+      size = 2,
+      vjust = -0.5
+    ) +
+    coord_cartesian(ylim = c(0, 1)) +
+    labs(title = paste0(model@method, ' ', model@seed)) +
+    theme_bw() +
+    theme(axis.title.y = element_blank())
+}
+
+```
+
+
+# Plot factor by factor
+```{r, out.width="100%", out.height="95%", results='asis'}
+# Plot them all side by side
+for (factor in factors){
+  
+  lee_random_plot <- get_source_contribution_plot(nmf_random$fit[[as.character(factor)]])
+  lee_nndsvd_plot <- get_source_contribution_plot(nmf_nndsvd$fit[[as.character(factor)]])
+  lsnmf_random_plot <- get_source_contribution_plot(lsnmf_random$fit[[as.character(factor)]])
+  lsnmf_nndsvd_plot <- get_source_contribution_plot(lsnmf_nndsvd$fit[[as.character(factor)]])
+  print(lee_random_plot | lee_nndsvd_plot | lsnmf_random_plot | lsnmf_nndsvd_plot)
+  
+  cat("\n\\newpage\n")
+  # First, the additive variance explained
+  lee_random_add_plot <- plot_variance_explained(nmf_random$fit[[as.character(factor)]])
+  lee_nndsvd_add_plot <- plot_variance_explained(nmf_nndsvd$fit[[as.character(factor)]])
+  lsnmf_random_add_plot <- plot_variance_explained(lsnmf_random$fit[[as.character(factor)]])
+  lsnmf_nndsvd_add_plot <- plot_variance_explained(lsnmf_nndsvd$fit[[as.character(factor)]])
+  
+  # Then, the Leave-one-out variance explained
+  lee_random_loo_plot <- plot_loo_variance(nmf_random$fit[[as.character(factor)]])
+  lee_nndsvd_loo_plot <- plot_loo_variance(nmf_nndsvd$fit[[as.character(factor)]])
+  lsnmf_random_loo_plot <- plot_loo_variance(lsnmf_random$fit[[as.character(factor)]])
+  lsnmf_nndsvd_loo_plot <- plot_loo_variance(lsnmf_nndsvd$fit[[as.character(factor)]])
+  
+  top_y_label <- wrap_elements(full = textGrob("Additive", rot = 90, gp = gpar(fontsize = 10)))
+  bot_y_label <- wrap_elements(full = textGrob("Leave-one-out", rot = 90, gp = gpar(fontsize = 10)))
+  y_axis_label <- wrap_elements(full = textGrob("Variance explained (WRSS)", rot = 90, gp = gpar(fontsize = 10)))
+  
+  final_plot <- (y_axis_label | (top_y_label / bot_y_label) | 
+                   ((lee_random_add_plot | lee_nndsvd_add_plot | lsnmf_random_add_plot | lsnmf_nndsvd_add_plot) /
+    (lee_random_loo_plot | lee_nndsvd_loo_plot | lsnmf_random_loo_plot | lsnmf_nndsvd_loo_plot))) +
+    plot_layout(widths = c(0.1, 0.1, 5),
+                axis_titles = "collect")
+  final_plot <- final_plot &
+    theme(
+      plot.margin = unit(c(0,0.05,0.1,0), "cm"),
+      plot.title = element_text(size = 6)
+    )
+  print(final_plot)
+  cat("\n\\newpage\n")
+}
+```
+

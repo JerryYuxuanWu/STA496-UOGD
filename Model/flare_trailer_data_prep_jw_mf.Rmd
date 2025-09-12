@@ -387,6 +387,6 @@ full_merged <- full_merged %>%
 full_merged <- full_merged %>%
   filter(day_mountain >= as.Date("2023-05-01"))
 
-write.csv(full_merged, paste0(wd, "../data/processed_data/full_data_for_regressions.csv", row.names=FALSE))
+write.csv(full_merged, paste0(wd, "../data/processed_data/full_data_for_regressions.csv"), row.names=FALSE)
 #write.csv(full_merged, "table6_new.csv", row.names=FALSE)
 ```
