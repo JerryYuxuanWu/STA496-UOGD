@@ -397,7 +397,7 @@ lsnmf_nndsvd <- readRDS('result_rfiles/lsnmf_nndsvd.rds')
 
 ```{r}
 
-nmf_result_5c_less_o3 <- lsnmf_nndsvd_less_o3$fit$`4`
+nmf_result_5c_less_o3 <- lsnmf_nndsvd$fit$`4`
 
 basis_matrix_5c_less_o3 <- basis(nmf_result_5c_less_o3) 
 coef_matrix_5c_less_o3 <- coef(nmf_result_5c_less_o3)
@@ -433,14 +433,16 @@ coef_matrix_5c_less_o3 <- coef(nmf_result_5c_less_o3)
 
 ```{r, message = FALSE}
 # read in saved lsnmf_nndsvd
-lsnmf_nndsvd_less_o3 <- readRDS('result_rfiles/lsnmf_nndsvd_less_o3.rds')
-
+lsnmf_nndsvd <- readRDS('result_rfiles/lsnmf_nndsvd.rds')
+nmf_result_5c_less_o3 <- lsnmf_nndsvd$fit$`5`
+basis_matrix_5c_less_o3 <- basis(nmf_result_5c_less_o3) 
+coef_matrix_5c_less_o3 <- coef(nmf_result_5c_less_o3)
 # get variance explained by the factors (WRSS)
-reconstruct<-fitted(lsnmf_nndsvd_less_o3)
+reconstruct <- fitted(lsnmf_nndsvd_less_o3$fit$`5`)
 
 # Traditional way of computing WRSS = sum of weight * (X - Xhat)^2
-wtss_trad <- sum(weight_matrix * (normalized_matrix_less_o3 - mean(normalized_matrix_less_o3))^2)
-wrss_trad <- sum(weight_matrix * (normalized_matrix_less_o3 - reconstruct)^2)
+wtss_trad <- sum(weight_matrix^2 * (normalized_matrix_less_o3 - mean(normalized_matrix_less_o3))^2)
+wrss_trad <- sum(weight_matrix^2 * (normalized_matrix_less_o3 - reconstruct)^2)
 variance_explained_trad <- 1 - (wrss_trad / wtss_trad)
 cat('Variance explained (Traditional WRSS): ', round(variance_explained_trad*100, 2), '%', sep = '')
 
@@ -448,8 +450,6 @@ cat('Variance explained (Traditional WRSS): ', round(variance_explained_trad*100
 # I think weight for the package is 1/sigma_ij
 wtss_pkg <- sum(0.5*(weight_matrix * (normalized_matrix_less_o3 - mean(normalized_matrix_less_o3)))^2)
 wrss_pkg <- sum(0.5*(weight_matrix * (normalized_matrix_less_o3 - reconstruct))^2)
-#wtss_pkg <- sum((weight_matrix * (normalized_matrix_less_o3 - mean(normalized_matrix_less_o3)))^2/2)
-#wrss_pkg <- sum((weight_matrix * (normalized_matrix_less_o3 - reconstruct))^2/2)
 variance_explained_pkg <- 1 - (wrss_pkg / wtss_pkg)
 cat('Variance explained (Package WRSS): ', round(variance_explained_pkg*100, 2), '%', sep = '')
 
@@ -468,7 +468,7 @@ for (i in 1:4) {
   reconstruction <- reconstruction + (basis_matrix_5c_less_o3[, i, drop=FALSE] %*% coef_matrix_5c_less_o3[i, , drop=FALSE])
   
   # Compute Residual Sum of Squares (RSS)
-  wrss_temp_trad <- sum(weight_matrix * (normalized_matrix_less_o3 - reconstruction)^2)
+  wrss_temp_trad <- sum(weight_matrix^2 * (normalized_matrix_less_o3 - reconstruction)^2)
   #wrss_temp_pkg <- sum((weight_matrix * (normalized_matrix_less_o3 - reconstruction))^2/2)
   wrss_temp_pkg <- sum(0.5*(weight_matrix * (normalized_matrix_less_o3 - reconstruction))^2)
     
@@ -505,13 +505,20 @@ tibble(factor = c(1:length(variance_explained_trad_factors),
 ### LOO Variance explained (in updated paper use traditional)
 ```{r}
 # call it leave-one-out variance explained
-variance_explained_trad_factors_loo <- numeric(4)
-variance_explained_pkg_factors_loo <- numeric(4)
-for (i in 1:4) {
-  # Compute reconstruction from the 4 factors (without the i-th)
+variance_explained_trad_factors_loo <- numeric(5)
+variance_explained_pkg_factors_loo <- numeric(5)
+variance_factor_list <- numeric(5)
+for (i in 1:5) {
+  # Compute reconstruction from the 5 factors (without the i-th)
   reconstruction_loo <- (basis_matrix_5c_less_o3[, -i, drop=FALSE] %*% coef_matrix_5c_less_o3[-i, , drop=FALSE])
+  
+  # For this factor
+  factor <- basis_matrix_5c_less_o3[, i, drop=FALSE] %*% coef_matrix_5c_less_o3[i, , drop=FALSE]
+  variance_factor <-  1 - (sum(weight_matrix^2 * (normalized_matrix_less_o3 - factor)^2)/ wtss_trad)
+  
+  variance_factor_list[i] <- variance_factor
   # Compute Residual Sum of Squares (RSS)
-  wrss_temp_trad <- sum(weight_matrix * (normalized_matrix_less_o3 - reconstruction_loo)^2)
+  wrss_temp_trad <- sum(weight_matrix^2 * (normalized_matrix_less_o3 - reconstruction_loo)^2)
   #wrss_temp_pkg <- sum((weight_matrix * (normalized_matrix_less_o3 - reconstruction))^2/2)
   wrss_temp_pkg <- sum(0.5*(weight_matrix * (normalized_matrix_less_o3 - reconstruction_loo))^2)
   # Compute Variance Explained without this factor
@@ -522,13 +529,15 @@ for (i in 1:4) {
   variance_explained_pkg_factors_loo[i] <- variance_explained_pkg - variance_explained_pkg_loo
 }
 #variance_explained_trad_factors_loo
-order_trad <- sapply(1:4, function(i) which(variance_explained_trad_factors_loo==sort(variance_explained_trad_factors_loo, decreasing = T)[i]))
+order_trad <- sapply(1:5, function(i) which(variance_explained_trad_factors_loo==sort(variance_explained_trad_factors_loo, decreasing = T)[i]))
 paste('Variance explained from each factor (LOO + traditional WRSS): ',
       paste0(order_trad, ' (',round(variance_explained_trad_factors_loo[order_trad], 3),')', collapse = ', '))
 # variance_explained_pkg_factors_loo
-order_pkg <- sapply(1:4, function(i) which(variance_explained_pkg_factors_loo==sort(variance_explained_pkg_factors_loo, decreasing = T)[i]))
+order_pkg <- sapply(1:5, function(i) which(variance_explained_pkg_factors_loo==sort(variance_explained_pkg_factors_loo, decreasing = T)[i]))
 paste('Variance explained from each factor (LOO + package WRSS): ',
       paste0(order_pkg, ' (',round(variance_explained_pkg_factors_loo[order_pkg], 3),')', collapse = ', '))
+
+variance_factor_list
 ```
 
 ```{r}
