@@ -1,0 +1,159 @@
+---
+title: "FlaringProcess"
+author: "William Zhang"
+date: "2023-09-28"
+output: html_document
+---
+```{r}
+library(geosphere)
+library(sf)
+library(tools)
+library(tidyverse)
+```
+
+## Reading data
+```{r}
+wells_clean <- readRDS("../data/wells/cleaned_wells_cb.rds")
+wells_prod <- readRDS("../data/wells/cb_wells_prod.rds")
+```
+
+```{r}
+# Location of trailer
+# kmz <- file_path_as_absolute("../data/Passive sampler network Permian 3.kmz")
+# 
+# kmz <- st_read(unzip(kmz))
+```
+
+## Cleaning and Processing
+Want to obtain monthly oil and gas production of all wells/prod within buffers loving site
+```{r}
+# filter distance
+loving_lonlat <- c(-104.1089, 32.2961) 
+loving_lonlat_sf <- st_sfc(st_point(loving_lonlat), crs = 4326) %>%
+  st_transform("+proj=utm +zone=13 ellps=WGS84")
+
+wells_prod <- wells_prod %>%
+  st_as_sf(coords = c('uog_lon', 'uog_lat'), remove = F) %>%
+  st_set_crs(4326) %>%
+  st_transform("+proj=utm +zone=13 ellps=WGS84")
+
+wells_prod <- wells_prod %>%
+  mutate(distToLovi = c(drop_units(st_distance(wells_prod, loving_lonlat_sf)))/1000) %>% 
+  st_drop_geometry() %>%
+  select(-c("spud_date", "completion_date", "first_prod_date", "last_prod_date", "Operator.Company.Name"))
+
+# Look at only conventional drilling by drill_type == 'V'
+wells_prod_conv <- wells_prod %>%
+  filter(drill_type == 'V')
+```
+
+```{r}
+# filter distance
+wells_prod <- wells_prod %>% filter(distToLovi <= 50) %>% select(-c("drill_type", "uog_lon", "uog_lat", "well_status_p", "well_status", "prod_type_p", "production_type"))
+
+wells_prod_conv <- wells_prod_conv %>% filter(distToLovi <= 50) %>% select(-c("drill_type", "uog_lon", "uog_lat", "well_status_p", "well_status", "prod_type_p", "production_type"))
+```
+
+
+### 20230101 to current - for Loving site
+```{r}
+wells_prod_0301 <- wells_prod %>% filter(prod_date >= "2023-05-01")
+# replace NA with 0
+wells_prod_0301$monthly_oil[is.na(wells_prod_0301$monthly_oil)] <- 0
+wells_prod_0301$monthly_gas[is.na(wells_prod_0301$monthly_gas)] <- 0
+
+wells_prod_conv_0301 <- wells_prod_conv %>% filter(prod_date >= "2023-05-01")
+# replace NA with 0
+wells_prod_conv_0301$monthly_oil[is.na(wells_prod_conv_0301$monthly_oil)] <- 0
+wells_prod_conv_0301$monthly_gas[is.na(wells_prod_conv_0301$monthly_gas)] <- 0
+```
+
+```{r}
+# Look at monthly prod for conventional vs unconventional
+# Unconventional
+wells_prod_0301 %>% group_by(prod_date) %>% 
+  filter(prod_date>='2023-05-01') %>%
+  summarize(monthly_oil = sum(monthly_oil),
+            monthly_gas = sum(monthly_gas)) %>%
+  print(n=20)
+
+# Conventional
+wells_prod_conv_0301 %>% group_by(prod_date) %>% 
+  filter(prod_date>='2023-05-01') %>%
+  summarize(monthly_oil = sum(monthly_oil),
+            monthly_gas = sum(monthly_gas)) %>%
+  print(n=20)
+```
+
+
+
+```{r}
+# Group by date and dist
+wells_prod_0301 <- wells_prod_0301 %>% group_by(prod_date, distToLovi) %>% 
+  summarize(n = n(),
+            monthly_oil = sum(monthly_oil),
+            monthly_gas = sum(monthly_gas))
+
+wells_prod_conv_0301 <- wells_prod_conv_0301 %>% group_by(prod_date, distToLovi) %>% 
+  summarize(n = n(),
+            monthly_oil = sum(monthly_oil),
+            monthly_gas = sum(monthly_gas))
+```
+
+```{r}
+# group by buffers around LNM
+
+buffers <- c(5, 10, 20, 30, 40, 50)
+
+assign_buffer <- function(dist) {
+  cut(dist,
+      breaks = c(-Inf, buffers),   
+      labels = paste0("<= ", buffers, " km"),
+      right = TRUE)
+}
+
+
+wells_prod_0301_grouped <- wells_prod_0301 %>%
+  mutate(buffer = assign_buffer(distToLovi)) %>%
+  group_by(prod_date, buffer) %>%
+  summarize(n = n(),
+            monthly_oil = sum(monthly_oil, na.rm = TRUE),
+            monthly_gas = sum(monthly_gas, na.rm = TRUE),
+            .groups = "drop")
+
+
+wells_prod_conv_0301_grouped <- wells_prod_conv_0301 %>%
+  mutate(buffer = assign_buffer(distToLovi)) %>%
+  group_by(prod_date, buffer) %>%
+  summarize(n = n(),
+            monthly_oil = sum(monthly_oil, na.rm = TRUE),
+            monthly_gas = sum(monthly_gas, na.rm = TRUE),
+            .groups = "drop")
+```
+
+```{r}
+# get totals
+
+wells_prod_0301_total <- wells_prod_0301 %>%
+  mutate(buffer = assign_buffer(distToLovi)) %>%
+  group_by(buffer) %>%
+  summarize(n = n(),
+            monthly_oil = sum(monthly_oil, na.rm = TRUE)/1000000,
+            monthly_gas = sum(monthly_gas, na.rm = TRUE)/1000000,
+            .groups = "drop")
+
+wells_prod_conv_0301_total <- wells_prod_conv_0301 %>%
+  mutate(buffer = assign_buffer(distToLovi)) %>%
+  group_by(buffer) %>%
+  summarize(n = n(),
+            monthly_oil = sum(monthly_oil, na.rm = TRUE)/1000000,
+            monthly_gas = sum(monthly_gas, na.rm = TRUE)/1000000,
+            .groups = "drop")
+```
+
+
+```{r}
+# save to RDS
+saveRDS(wells_prod_0301, "../data/processed_data/WellsProcessed20250909.rds")
+```
+
