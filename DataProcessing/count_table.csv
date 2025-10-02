@@ -1,0 +1,6 @@
+type,n_50km,n_40km,n_30km,n_20km,n_10km,n_5km
+Conventional & Active during sampling,3212,2017,1083,566,213,78
+Conventional & Inactive during sampling,2644,1596,869,544,174,41
+Unconventional & Active during sampling,8401,5060,2890,1541,546,132
+Unconventional & Inactive during sampling,1873,1180,644,300,96,29
+Total,16130,9853,5486,2951,1029,280

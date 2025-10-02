@@ -14,8 +14,8 @@ library(lwgeom)
 library(sf)
 library(units)
 
-wd<-'/Users/meredith/Library/CloudStorage/GoogleDrive-mereditf@usc.edu/Shared drives/HEI Energy/flaring/new-git/STA496-UOGD'
-#wd <- ''
+#wd<-'/Users/meredith/Library/CloudStorage/GoogleDrive-mereditf@usc.edu/Shared drives/HEI Energy/flaring/new-git/STA496-UOGD'
+wd <- '../'
 ```
 
 ## Data
@@ -31,7 +31,8 @@ wd<-'/Users/meredith/Library/CloudStorage/GoogleDrive-mereditf@usc.edu/Shared dr
 #trailer_hourly <- readRDS('/Users/meredith/Library/CloudStorage/GoogleDrive-mereditf@usc.edu/Shared drives/HEI Energy/flaring/STA496-UOGD/STA496-UOGD/DataProcessing/TrailerProcessed-20240601.rds')
 trailer_hourly <-readRDS(paste0(wd,"/data/processed_data/Trailer_hourly_merge_20250909.rds"))
 trailer_hourly$total_radioactivity<-trailer_hourly$radon_B+trailer_hourly$rd_particle_B
-trailer_hourly<-trailer_hourly[trailer_hourly$`1_3-butadiene`<=0.1,]
+#trailer_hourly<-trailer_hourly[trailer_hourly$`1_3-butadiene`<=0.1,]
+trailer_hourly<-trailer_hourly[which(trailer_hourly$`1_3-butadiene`<=0.1),] # changing this to omit na rows when 1_3-butadiene is missing.
 ```
 
 
@@ -51,21 +52,41 @@ trailer_hourly_clean <- trailer_hourly %>%
 
 
 ```{r warning=FALSE, message=FALSE}
+compute_avg_wind <- function(ws, wd){
+  # Compute Wind Vector Azimuth
+  # Each wind vector is (u, v) and angle is the clockwise angle from North
+  u <- ws * sin(pi/180 * wd)
+  v <- ws * cos(pi/180 * wd)
+  
+  u_mean <- mean(u, na.rm=TRUE)
+  v_mean <- mean(v, na.rm=TRUE)
+  
+  mean_speed <- sqrt(u_mean^2 + v_mean^2)
+  
+  mean_direction <- atan2(u_mean, v_mean)*(180/pi)
+  
+  # Convert to [0, 360]
+  mean_direction <- (mean_direction + 360) %% 360 
+  return(list(wsp_ms = mean_speed, wdr_deg = mean_direction))
+}
+
 # Compute daily average
 trailer_daily <- trailer_hourly_clean %>% 
   dplyr::select(-c(time_utc, day_utc, datetime_utc, datetime_mountain)) %>% 
   group_by(day_mountain) %>% 
-  summarise(across(!wdr_deg, ~mean(.x, na.rm=T)),
-            wdr_deg = as.numeric(mean(circular(wdr_deg, units = "degrees", template="geographics"), na.rm=T))) %>%
-  mutate(wdr_deg = if_else(wdr_deg < 0, wdr_deg+360, wdr_deg))
+  summarise(across(!c(wdr_deg, wsp_ms), ~mean(.x, na.rm=T)),
+            #wdr_deg = as.numeric(mean(circular(wdr_deg, units = "degrees", template="geographics"), na.rm=T))) %>%
+            avg_wind = list(compute_avg_wind(wsp_ms, wdr_deg))) %>%
+  unnest_wider(avg_wind)
 
 # Compute nightly average measurement from 0am to 6am
 trailer_night_avg <- trailer_hourly_clean %>% 
   filter(hour(ymd_hms(datetime_mountain)) <= 6) %>%
   dplyr::select(-c(time_utc, day_utc, datetime_utc, datetime_mountain)) %>% 
   group_by(day_mountain) %>% 
-  summarise(across(everything(), ~mean(.x, na.rm=T))) %>%
-  mutate(wdr_deg = if_else(wdr_deg < 0, wdr_deg+360, wdr_deg))
+  summarise(across(!c(wdr_deg, wsp_ms), ~mean(.x, na.rm=T)),
+            avg_wind = list(compute_avg_wind(wsp_ms, wdr_deg))) %>%
+  unnest_wider(avg_wind)
 ```
 
 

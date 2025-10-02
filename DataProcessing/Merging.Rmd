@@ -25,6 +25,7 @@ Wells <- readRDS('../data/processed_data/WellsProcessed20250909.rds')
 Trailer <- Trailer %>% mutate(day = format(as.POSIXct(time_utc), '%Y-%m-%d'))
 Trailer <- Trailer %>% mutate(yearmonth = format(as.POSIXct(time_utc), '%Y-%m'))
 ```
+
 ```{r}
 # create a trailer_daily
 my_mean <- function(x){
@@ -36,10 +37,12 @@ Trailer_daily <- Trailer %>% group_by(day) %>%
 # add a month variable for that
 Trailer_daily <- Trailer_daily %>% mutate(yearmonth = format(as.POSIXct(day), '%Y-%m'))
 ```
+
 ```{r}
 # add an inverse distance for flaring
 flaring$inv_dist <- ifelse(1 / flaring$distToLovi < 0.01, 0, 1 / flaring$distToLovi)
 ```
+
 ```{r}
 # summarize a daily count flaring
 flaring_daily <- flaring %>% 
