@@ -24,6 +24,7 @@ wells_prod <- readRDS("../data/wells/cb_wells_prod.rds")
 # kmz <- st_read(unzip(kmz))
 ```
 
+
 ## Cleaning and Processing
 Want to obtain monthly oil and gas production of all wells/prod within buffers loving site
 ```{r}
@@ -45,6 +46,55 @@ wells_prod <- wells_prod %>%
 # Look at only conventional drilling by drill_type == 'V'
 wells_prod_conv <- wells_prod %>%
   filter(drill_type == 'V')
+```
+
+
+```{r}
+labels <- c('Conventional & Active during sampling', 'Conventional & Inactive during sampling', 'Unconventional & Active during sampling', 'Unconventional & Inactive during sampling')
+# Create some binary variables for well type
+# 1. Conventional well that produced between (including) May 2023, May 2024 (Red)
+# 2. Conventional well that did not produce between ^ (Green)
+# 3. Unconventional well that produced between ^ (Blue)
+# 4. Unconventional well that did not produce between ^ (Purple)
+# The wells taken into consideration are wells that produced sometime on or after 2010
+wells_prod_wtype <- wells_prod %>%
+  mutate(type = case_when(between(prod_date, as.Date('2023-05-01'), as.Date('2024-05-01')) & 
+                            drill_type == 'V' ~ 1,
+                          !between(prod_date, as.Date('2023-05-01'), as.Date('2024-05-01')) & 
+                            drill_type == 'V' ~ 2,
+                          between(prod_date, as.Date('2023-05-01'), as.Date('2024-05-01')) & 
+                            drill_type != 'V' ~ 3,
+                          !between(prod_date, as.Date('2023-05-01'), as.Date('2024-05-01')) & 
+                            drill_type != 'V' ~ 4,
+                          .default = 5))
+
+wells_prod_viz_df <- wells_prod_wtype %>%
+  group_by(api, uog_lon, uog_lat, distToLovi) %>%
+  summarise(type = min(type)) %>%
+  distinct()
+
+count_table <- wells_prod_viz_df %>% group_by(type)%>% 
+  summarise(#n = n(), 
+            `n_50km` = sum(distToLovi<=50),
+            `n_40km` = sum(distToLovi<=40),
+            `n_30km` = sum(distToLovi<=30),
+            `n_20km` = sum(distToLovi<=20),
+            `n_10km` = sum(distToLovi<=10),
+            `n_5km` = sum(distToLovi<=5)) %>%
+  cbind(labels) %>% 
+  mutate(type=labels) %>% 
+  select(type, `n_50km`, `n_40km`, `n_30km`, `n_20km`, `n_10km`, `n_5km`) %>%
+  add_row(tibble(type = 'Total', 
+                 #n = nrow(wells_prod_viz_df),
+                 `n_50km` = sum(wells_prod_viz_df$distToLovi <= 50),
+                 `n_40km` = sum(wells_prod_viz_df$distToLovi <= 40),
+                 `n_30km` = sum(wells_prod_viz_df$distToLovi <= 30),
+                 `n_20km` = sum(wells_prod_viz_df$distToLovi <= 20),
+                 `n_10km` = sum(wells_prod_viz_df$distToLovi <= 10),
+                 `n_5km` = sum(wells_prod_viz_df$distToLovi <= 5)))
+
+count_table
+#write_csv(count_table, 'count_table.csv')
 ```
 
 ```{r}
