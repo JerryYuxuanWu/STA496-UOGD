@@ -14,25 +14,29 @@ library(lwgeom)
 library(sf)
 library(units)
 
-#wd<-'/Users/meredith/Library/CloudStorage/GoogleDrive-mereditf@usc.edu/Shared drives/HEI Energy/flaring/new-git/STA496-UOGD'
-wd <- ''
+wd<-'/Users/meredith/Library/CloudStorage/GoogleDrive-mereditf@usc.edu/Shared drives/HEI Energy/flaring/new-git/STA496-UOGD'
+#wd <- ''
 ```
 
 ## Data
 - gather hourly (VOC matched) trailer data, subset to components related to flaring
 - compute daily and nightly averages to match with flaring data
+- merge enverus data and new VNF
+- include NMF factors
+
 
 #### Trailer data
 ```{r}
 #trailer_hourly <- readRDS('../../DataProcessing/TrailerProcessed-20240601.rds')
 #trailer_hourly <- readRDS('/Users/meredith/Library/CloudStorage/GoogleDrive-mereditf@usc.edu/Shared drives/HEI Energy/flaring/STA496-UOGD/STA496-UOGD/DataProcessing/TrailerProcessed-20240601.rds')
-trailer_hourly <-readRDS(paste0(wd,"../data/processed_data/Trailer_hourly_merge_20250909.rds"))
+trailer_hourly <-readRDS(paste0(wd,"/data/processed_data/Trailer_hourly_merge_20250909.rds"))
 trailer_hourly$total_radioactivity<-trailer_hourly$radon_B+trailer_hourly$rd_particle_B
+trailer_hourly<-trailer_hourly[trailer_hourly$`1_3-butadiene`<=0.1,]
 ```
 
 
 ```{r}
-columns <- c('time_utc', 'ch4', 'co', 'co2_ppm', 'h2s','so2','nox', 'benzene', 'ethene', 
+columns <- c('time_utc', 'ch4', 'co', 'co2_ppm', 'h2s','so2','nox', 'benzene', 'ethene', '1_3-butadiene',
              'ethane', "total_radioactivity", 'wdr_deg', 'wsp_ms')
 
 trailer_hourly_clean <- trailer_hourly %>% 
@@ -119,49 +123,55 @@ trailer_night_avg$wind_bin <- bin_wind_dir(trailer_night_avg$wdr_deg)
 
 
 ```{r}
-Wells <- readRDS(paste0(wd,"../data/processed_data/WellsProcessed20250909.rds"))
+Wells <- readRDS(paste0(wd,"/data/processed_data/WellsProcessed20250909.rds"))
 ```
 
 ```{r}
 radius <- c(5, 10, 20, 30, 40, 50)
 
-for (i in 1:length(radius)){
-  if (i == 1){
+for (i in seq_along(radius)) {
+  if (i == 1) {
     wells_monthly <- Wells %>%
       filter(distToLovi <= radius[i]) %>%
-      group_by(substr(prod_date, 1, 7)) %>%
-      mutate(inv_dist_well = ifelse(1 / distToLovi < 0.01, 0, 1 / distToLovi)) %>%
-      summarize(
-        distToLovi_wells = mean(n*distToLovi),
-        inv_dist_wells = mean(n*inv_dist_well),
-        weighted_count_wells = sum(inv_dist_wells) * 100,
-        weighted_monthly_oil = sum(monthly_oil * inv_dist_well),
-        weighted_monthly_gas = sum(monthly_gas * inv_dist_well),
-        monthly_oil = sum(monthly_oil),
-        monthly_gas = sum(monthly_gas)
+      mutate(Month = format(as.Date(prod_date), "%Y-%m"),
+             inv_dist_well = ifelse(1 / distToLovi < 0.01, 0, 1 / distToLovi)) %>%
+      group_by(Month) %>%
+      summarise(
+        closest_well = min(distToLovi, na.rm = TRUE),
+        mean_dist_well = mean(distToLovi, na.rm = TRUE),
+        weighted_count_wells = sum(inv_dist_well, na.rm = TRUE) * 100,
+        weighted_monthly_oil = sum(monthly_oil * inv_dist_well, na.rm = TRUE),
+        weighted_monthly_gas = sum(monthly_gas * inv_dist_well, na.rm = TRUE),
+        monthly_oil = sum(monthly_oil, na.rm = TRUE),
+        monthly_gas = sum(monthly_gas, na.rm = TRUE),
+        .groups = "drop"
       ) %>%
-      rename(Month = `substr(prod_date, 1, 7)`) %>%
-      rename_with(~paste0(.x, '_', radius[i]), -Month)
-  } else{
+      rename_with(~paste0(.x, "_", radius[i]), -Month)
+    
+  } else {
     wells_monthly <- left_join(
-    wells_monthly,
-    Wells %>%
-      filter(distToLovi <= radius[i]) %>%
-      group_by(substr(prod_date, 1, 7)) %>%
-      mutate(inv_dist_well = ifelse(1 / distToLovi < 0.01, 0, 1 / distToLovi)) %>%
-      summarize(
-        distToLovi_wells = mean(n*distToLovi),
-        inv_dist_wells = mean(n*inv_dist_well),
-        weighted_count_wells = sum(inv_dist_wells) * 100,
-        weighted_monthly_oil = sum(monthly_oil * inv_dist_well),
-        weighted_monthly_gas = sum(monthly_gas * inv_dist_well),
-        monthly_oil = sum(monthly_oil),
-        monthly_gas = sum(monthly_gas)
-      ) %>%
-      rename(Month = `substr(prod_date, 1, 7)`) %>%
-      rename_with(~paste0(.x, '_', radius[i]), -Month))
+      wells_monthly,
+      Wells %>%
+        filter(distToLovi <= radius[i]) %>%
+        mutate(Month = format(as.Date(prod_date), "%Y-%m"),
+               inv_dist_well = ifelse(1 / distToLovi < 0.01, 0, 1 / distToLovi)) %>%
+        group_by(Month) %>%
+        summarise(
+          closest_well = min(distToLovi, na.rm = TRUE),
+          mean_dist_well = mean(distToLovi, na.rm = TRUE),
+          weighted_count_wells = sum(inv_dist_well, na.rm = TRUE) * 100,
+          weighted_monthly_oil = sum(monthly_oil * inv_dist_well, na.rm = TRUE),
+          weighted_monthly_gas = sum(monthly_gas * inv_dist_well, na.rm = TRUE),
+          monthly_oil = sum(monthly_oil, na.rm = TRUE),
+          monthly_gas = sum(monthly_gas, na.rm = TRUE),
+          .groups = "drop"
+        ) %>%
+        rename_with(~paste0(.x, "_", radius[i]), -Month),
+      by = "Month"
+    )
   }
 }
+
 ```
 
 #### Flare Data
@@ -176,7 +186,9 @@ for (i in 1:length(radius)){
 #flaring2 <- readRDS('FlaringProcessed.rds')
 
 #flaring <-read.csv("../../data/pb_vnf/flaring_v35_clustered.csv")
-flaring <- readRDS(paste0(wd, "../data/processed_data/model_dataset_highest_train_r2.rds"))
+#flaring <- readRDS(paste0(wd, "../data/processed_data/model_dataset_highest_train_r2.rds"))
+
+flaring <- read.csv("/Users/meredith/Library/CloudStorage/GoogleDrive-mereditf@usc.edu/Shared drives/HEI Energy/data/vnf data/datasets/complete_datasets/imputed_hdbscan_dataset.csv")
 
 flaring <- flaring %>%
   mutate(
@@ -222,33 +234,51 @@ flaring_loving_50 <- flaring %>%
 - create counts of flares by buffer
 - take mean by date of the VNF params including predicted methane_eq
 
-
+- Also try idw weighted flares and methane_eq
 
 ```{r}
-# summarize a daily count flaring
 flaring_daily <- flaring_loving_50 %>% 
   mutate(inv_dist = ifelse(1 / distToLovi_flare < 0.01, 0, 1 / distToLovi_flare)) %>%
-  # filter(distToLovi_flare <= 100) %>% Not necessary since we already filtered for 50km
   group_by(date) %>% 
-  summarise(closest.flare = min(distToLovi_flare),
-            distToLovi_flare_mean = mean(distToLovi_flare, na.rm=T),
-            inv_dist = mean(inv_dist),
-            weighted.count = sum(inv_dist) * 100,
-            n_flare_50 = n(),
-            n_flare_40 = coalesce(sum(distToLovi_flare <= 40), 0),
-            n_flare_30 = coalesce(sum(distToLovi_flare <= 30), 0),
-            n_flare_20 = coalesce(sum(distToLovi_flare <= 20), 0),
-            n_flare_10 = coalesce(sum(distToLovi_flare <= 10), 0),
-            n_flare_5 = coalesce(sum(distToLovi_flare <= 5), 0),
-            imputed_methane_eq_50 = median(imputed_methane_eq, na.rm=T),
-            imputed_methane_eq_40 = median(imputed_methane_eq[distToLovi_flare <= 40], na.rm=TRUE),
-            imputed_methane_eq_30 = median(methane_eq[distToLovi_flare <= 30], na.rm=TRUE),
-            imputed_methane_eq_20 = median(methane_eq[distToLovi_flare <= 20], na.rm=TRUE),
-            imputed_methane_eq_10 = median(methane_eq[distToLovi_flare <= 10], na.rm=TRUE),
-            imputed_methane_eq_5 = median(methane_eq[distToLovi_flare <= 5], na.rm=TRUE),
-            methane_eq = median(methane_eq, na.rm=T))%>%
+  summarise(
+    closest.flare = min(distToLovi_flare),
+    distToLovi_flare_mean = mean(distToLovi_flare, na.rm=TRUE),
+    inv_dist_mean = mean(inv_dist, na.rm=TRUE),
+    
+    # Weighted number of flares
+    weighted.count = sum(inv_dist, na.rm=TRUE) * 100,
+    
+    n_flare_50 = n(),
+    n_flare_40 = coalesce(sum(distToLovi_flare <= 40), 0),
+    n_flare_30 = coalesce(sum(distToLovi_flare <= 30), 0),
+    n_flare_20 = coalesce(sum(distToLovi_flare <= 20), 0),
+    n_flare_10 = coalesce(sum(distToLovi_flare <= 10), 0),
+    n_flare_5  = coalesce(sum(distToLovi_flare <= 5), 0),
+    
+    # Medians by buffer
+    imputed_methane_eq_50 = median(imputed_methane_eq, na.rm=TRUE),
+    imputed_methane_eq_40 = median(imputed_methane_eq[distToLovi_flare <= 40], na.rm=TRUE),
+    imputed_methane_eq_30 = median(methane_eq[distToLovi_flare <= 30], na.rm=TRUE),
+    imputed_methane_eq_20 = median(methane_eq[distToLovi_flare <= 20], na.rm=TRUE),
+    imputed_methane_eq_10 = median(methane_eq[distToLovi_flare <= 10], na.rm=TRUE),
+    imputed_methane_eq_5  = median(methane_eq[distToLovi_flare <= 5], na.rm=TRUE),
+    methane_eq = median(methane_eq, na.rm=TRUE),
+    
+    # Inverse-distance-weighted averages
+    idw_imputed_methane_eq = ifelse(sum(inv_dist, na.rm=TRUE) > 0,
+                                    sum(imputed_methane_eq * inv_dist, na.rm=TRUE) / sum(inv_dist, na.rm=TRUE),
+                                    NA_real_),
+    idw_methane_eq = ifelse(sum(inv_dist, na.rm=TRUE) > 0,
+                            sum(methane_eq * inv_dist, na.rm=TRUE) / sum(inv_dist, na.rm=TRUE),
+                            NA_real_),
+    
+    # Inverse-distance-weighted totals (scaled by 100)
+    idw_total_imputed_methane_eq = sum(imputed_methane_eq * inv_dist, na.rm=TRUE) * 100,
+    idw_total_methane_eq = sum(methane_eq * inv_dist, na.rm=TRUE) * 100
+  ) %>%
   rename(distToLovi_flare = distToLovi_flare_mean)
 ```
+
 
 ```{r}
 # Notice that if there's no flare in a given night, there's no row for that day.
@@ -262,7 +292,13 @@ flaring_daily <- flaring_daily %>%
            n_flare_20 = 0,
            n_flare_10 = 0,
            n_flare_5 = 0,
-           weighted.count = 0)
+           weighted.count = 0,
+           methane_eq=0,
+           idw_imputed_methane_eq=0,
+           idw_methane_eq=0,
+           idw_total_imputed_methane_eq=0,
+           idw_total_methane_eq=0
+           )
   ) %>%
   arrange(date)
 ```
@@ -306,14 +342,14 @@ flaring_loving_50$angle <- angles
 
 ```{r}
 #nmf_data <- readRDS('../../Model/result_rfiles/normalized_hourly_data_5c_less_o3.rds')
-nmf_data <- readRDS(paste0(wd, 'result_rfiles/normalized_hourly_data_4c_less_o3.rds'))
+nmf_data <- readRDS(paste0(wd, '/Model/result_rfiles/normalized_hourly_data_5c_less_o3.rds'))
 
 ```
 
 
 ```{r}
 nmf_factor_hourly <- nmf_data %>%
-  dplyr::select(time_utc, Factor1, Factor2, Factor3, Factor4) %>%
+  dplyr::select(time_utc, Factor1, Factor2, Factor3, Factor4, Factor5) %>%
   mutate(datetime_mountain = with_tz(as.POSIXct(time_utc, tz = 'UTC', format = "%Y-%m-%d %H:%M:%OS"), 
                                      tzone = "America/Denver")) %>%
   mutate(day_mountain = as.Date(format(datetime_mountain, '%Y-%m-%d'))) %>%
@@ -387,6 +423,6 @@ full_merged <- full_merged %>%
 full_merged <- full_merged %>%
   filter(day_mountain >= as.Date("2023-05-01"))
 
-write.csv(full_merged, paste0(wd, "../data/processed_data/full_data_for_regressions.csv"), row.names=FALSE)
+write.csv(full_merged, paste0(wd, "/data/processed_data/full_data_for_regressions.csv"), row.names=FALSE)
 #write.csv(full_merged, "table6_new.csv", row.names=FALSE)
 ```
