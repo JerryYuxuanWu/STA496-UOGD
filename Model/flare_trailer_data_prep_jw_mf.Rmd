@@ -56,7 +56,7 @@ trailer_daily <- trailer_hourly_clean %>%
   dplyr::select(-c(time_utc, day_utc, datetime_utc, datetime_mountain)) %>% 
   group_by(day_mountain) %>% 
   summarise(across(!wdr_deg, ~mean(.x, na.rm=T)),
-            wdr_deg = as.numeric(mean(circular(wdr_deg, units = "degrees"), na.rm=T))) %>%
+            wdr_deg = as.numeric(mean(circular(wdr_deg, units = "degrees", template="geographics"), na.rm=T))) %>%
   mutate(wdr_deg = if_else(wdr_deg < 0, wdr_deg+360, wdr_deg))
 
 # Compute nightly average measurement from 0am to 6am
