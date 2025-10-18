@@ -79,7 +79,7 @@ trailer_daily <- trailer_hourly_clean %>%
             avg_wind = list(compute_avg_wind(wsp_ms, wdr_deg))) %>%
   unnest_wider(avg_wind)
 
-# Compute nightly average measurement from 0am to 6am
+# Compute nightly average measurement from 0am to 6am (note 10/2/2025 MF change to 5am)
 trailer_night_avg <- trailer_hourly_clean %>% 
   filter(hour(ymd_hms(datetime_mountain)) <= 5) %>%
   dplyr::select(-c(time_utc, day_utc, datetime_utc, datetime_mountain)) %>% 
@@ -258,44 +258,66 @@ flaring_loving_50 <- flaring %>%
 - Also try idw weighted flares and methane_eq
 
 ```{r}
+library(matrixStats) # for weightedMedian
+
 flaring_daily <- flaring_loving_50 %>% 
-  mutate(inv_dist = ifelse(1 / distToLovi_flare < 0.01, 0, 1 / distToLovi_flare)) %>%
+  mutate(
+    inv_dist  = ifelse(1 / distToLovi_flare < 0.01, 0, 1 / distToLovi_flare),
+    inv_dist2 = inv_dist^2
+  ) %>%
   group_by(date) %>% 
   summarise(
-    closest.flare = min(distToLovi_flare),
-    distToLovi_flare_mean = mean(distToLovi_flare, na.rm=TRUE),
-    inv_dist_mean = mean(inv_dist, na.rm=TRUE),
-    
+    closest.flare          = min(distToLovi_flare),
+    distToLovi_flare_mean  = mean(distToLovi_flare, na.rm = TRUE),
+    inv_dist_mean          = mean(inv_dist,  na.rm = TRUE),
+    inv_dist2_mean         = mean(inv_dist2, na.rm = TRUE),
+
     # Weighted number of flares
-    weighted.count = sum(inv_dist, na.rm=TRUE) * 100,
-    
+    weighted.count    = sum(inv_dist,  na.rm = TRUE) * 100,
+    weighted.count2 = sum(inv_dist2, na.rm = TRUE) * 100,
+
     n_flare_50 = n(),
     n_flare_40 = coalesce(sum(distToLovi_flare <= 40), 0),
     n_flare_30 = coalesce(sum(distToLovi_flare <= 30), 0),
     n_flare_20 = coalesce(sum(distToLovi_flare <= 20), 0),
     n_flare_10 = coalesce(sum(distToLovi_flare <= 10), 0),
     n_flare_5  = coalesce(sum(distToLovi_flare <= 5), 0),
+
+    #IDW^2 means
+    idw2_imputed_methane_eq = if (sum(inv_dist2, na.rm = TRUE) > 0) {
+      sum(imputed_methane_eq * inv_dist2, na.rm = TRUE) / sum(inv_dist2, na.rm = TRUE)
+    } else NA_real_,
+
+    idw2_methane_eq = if (sum(inv_dist2, na.rm = TRUE) > 0) {
+      sum(methane_eq * inv_dist2, na.rm = TRUE) / sum(inv_dist2, na.rm = TRUE)
+    } else NA_real_,
+
+    #IDW^2 totals
+    idw2_total_imputed_methane_eq = sum(imputed_methane_eq * inv_dist2, na.rm = TRUE) * 100,
+    idw2_total_methane_eq         = sum(methane_eq         * inv_dist2, na.rm = TRUE) * 100,
+
+    #IDW totals
+    idw_total_imputed_methane_eq = sum(imputed_methane_eq * inv_dist, na.rm = TRUE) * 100,
+    idw_total_methane_eq         = sum(methane_eq         * inv_dist, na.rm = TRUE) * 100,
+
     
-    # Medians by buffer
-    imputed_methane_eq_50 = median(imputed_methane_eq, na.rm=TRUE),
-    imputed_methane_eq_40 = median(imputed_methane_eq[distToLovi_flare <= 40], na.rm=TRUE),
-    imputed_methane_eq_30 = median(methane_eq[distToLovi_flare <= 30], na.rm=TRUE),
-    imputed_methane_eq_20 = median(methane_eq[distToLovi_flare <= 20], na.rm=TRUE),
-    imputed_methane_eq_10 = median(methane_eq[distToLovi_flare <= 10], na.rm=TRUE),
-    imputed_methane_eq_5  = median(methane_eq[distToLovi_flare <= 5], na.rm=TRUE),
-    methane_eq = median(methane_eq, na.rm=TRUE),
-    
-    # Inverse-distance-weighted averages
-    idw_imputed_methane_eq = ifelse(sum(inv_dist, na.rm=TRUE) > 0,
-                                    sum(imputed_methane_eq * inv_dist, na.rm=TRUE) / sum(inv_dist, na.rm=TRUE),
-                                    NA_real_),
-    idw_methane_eq = ifelse(sum(inv_dist, na.rm=TRUE) > 0,
-                            sum(methane_eq * inv_dist, na.rm=TRUE) / sum(inv_dist, na.rm=TRUE),
-                            NA_real_),
-    
-    # Inverse-distance-weighted totals (scaled by 100)
-    idw_total_imputed_methane_eq = sum(imputed_methane_eq * inv_dist, na.rm=TRUE) * 100,
-    idw_total_methane_eq = sum(methane_eq * inv_dist, na.rm=TRUE) * 100
+    # IDW^2 median
+    idw2_median_methane_eq_interp = if (sum(inv_dist2, na.rm = TRUE) > 0) {
+      weightedMedian(methane_eq, w = inv_dist2, na.rm = TRUE, interpolate = TRUE)
+    } else NA_real_,
+
+    idw2_median_imputed_methane_eq_interp= if (sum(inv_dist2, na.rm = TRUE) > 0) {
+      weightedMedian(imputed_methane_eq, w = inv_dist2, na.rm = TRUE, interpolate = TRUE)
+    } else NA_real_,
+
+    imputed_methane_eq_50 = median(imputed_methane_eq, na.rm = TRUE),
+    imputed_methane_eq_40 = median(imputed_methane_eq[distToLovi_flare <= 40], na.rm = TRUE),
+    imputed_methane_eq_30 = median(methane_eq        [distToLovi_flare <= 30], na.rm = TRUE),
+    imputed_methane_eq_20 = median(methane_eq        [distToLovi_flare <= 20], na.rm = TRUE),
+    imputed_methane_eq_10 = median(methane_eq        [distToLovi_flare <= 10], na.rm = TRUE),
+    imputed_methane_eq_5  = median(methane_eq        [distToLovi_flare <=  5], na.rm = TRUE),
+
+    methane_eq_median = median(methane_eq, na.rm = TRUE)
   ) %>%
   rename(distToLovi_flare = distToLovi_flare_mean)
 ```
@@ -314,11 +336,16 @@ flaring_daily <- flaring_daily %>%
            n_flare_10 = 0,
            n_flare_5 = 0,
            weighted.count = 0,
+           weighted.count2 = 0,
            methane_eq=0,
-           idw_imputed_methane_eq=0,
-           idw_methane_eq=0,
+           idw2_imputed_methane_eq=0,
+           idw2_methane_eq=0,
+           idw2_total_imputed_methane_eq=0,
+           idw2_total_methane_eq=0,
            idw_total_imputed_methane_eq=0,
-           idw_total_methane_eq=0
+           idw_total_methane_eq=0,
+           idw2_median_methane_eq_interp=0,
+           idw2_median_imputed_methane_eq_interp=0
            )
   ) %>%
   arrange(date)
