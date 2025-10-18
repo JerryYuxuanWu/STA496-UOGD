@@ -81,7 +81,7 @@ trailer_daily <- trailer_hourly_clean %>%
 
 # Compute nightly average measurement from 0am to 6am
 trailer_night_avg <- trailer_hourly_clean %>% 
-  filter(hour(ymd_hms(datetime_mountain)) <= 6) %>%
+  filter(hour(ymd_hms(datetime_mountain)) <= 5) %>%
   dplyr::select(-c(time_utc, day_utc, datetime_utc, datetime_mountain)) %>% 
   group_by(day_mountain) %>% 
   summarise(across(!c(wdr_deg, wsp_ms), ~mean(.x, na.rm=T)),
