@@ -11,7 +11,7 @@ library(tidyverse)
 ```{r}
 # Read all the related RDS first
 flaring <- readRDS('../data/processed_data/FlaringProcessed20250909.rds')
-Trailer <- readRDS('../data/processed_data/TrailerProcessed20250909.rds')
+Trailer <- readRDS('../data/processed_data/TrailerProcessed20251018.rds')
 # Weather <- readRDS('WeatherProcessed.rds')
 Wells <- readRDS('../data/processed_data/WellsProcessed20250909.rds')
 ```

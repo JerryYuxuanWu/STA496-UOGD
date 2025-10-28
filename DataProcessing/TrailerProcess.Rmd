@@ -34,14 +34,14 @@ library(mgcv)
 #       assign(paste0(file), read.csv(file_dir, skip=1, header=TRUE))
 #     }
 # }
-
-filenames <- list.files('../data/VOC sampling window data 20240601/')
+folder <- '../data/VOC sampling window data 20251018/'
+filenames <- list.files(folder)
 filenames <- filenames[grep('.csv', filenames)]
 
 for (i in 1:length(filenames)) {
-  col_names <- read_csv(paste0('../data/VOC sampling window data 20240601/', filenames[i]), n_max = 0) %>% names()
-  units <- read_csv(paste0('../data/VOC sampling window data 20240601/', filenames[i]), skip = 1, n_max = 0) %>% names()
-  data <- read_csv(paste0('../data/VOC sampling window data 20240601/', filenames[i]), skip = 1)
+  col_names <- read_csv(paste0(folder, filenames[i]), n_max = 0) %>% names()
+  units <- read_csv(paste0(folder, filenames[i]), skip = 1, n_max = 0) %>% names()
+  data <- read_csv(paste0(folder, filenames[i]), skip = 1)
   colnames(data) <- col_names
   data$time_utc <- as.character(data$time_utc)
   
@@ -103,9 +103,13 @@ for (i in 1:length(filenames)) {
 hourly_data$hour <- as.numeric(substr(hourly_data$time_utc, 12, 13))
 ```
 
+```{r}
+#Trailer_new <- readRDS('../data/processed_data/TrailerProcessed20251018.rds')
+```
 
 ```{r}
 # Saving
-saveRDS(hourly_data, file = "../data/processed_data/TrailerProcessed20250909.rds")
+#saveRDS(hourly_data, file = "../data/processed_data/TrailerProcessed20250909.rds")
+saveRDS(hourly_data, file = "../data/processed_data/TrailerProcessed20251018.rds")
 ```
 
