@@ -181,7 +181,6 @@ adjusted_background_non_voc <- background_lod_non_voc %>%
 
 
 ```{r message=FALSE, warning=FALSE}
-
 background_lod_voc <- LOD_voc_avg %>%
   left_join(tibble(chemical = setdiff(names(background_levels), non_vocs),
                    background = background_levels[setdiff(names(background_levels), 
@@ -215,7 +214,9 @@ hourly_nona_bgrm <- hourly_nona_bgrm %>%
 set.seed(123)
 replace_zero_with_random <- function(column, name, LOD_df){
   LOD <- LOD_df$LOD[LOD_df$chemical == name]
+  # column <- if_else(column == 0, round(runif(length(column), 0, 0.5 * LOD), 3), column)
   column <- if_else(column == 0, round(runif(length(column), 0, 0.5 * LOD), 3), column)
+  column <- if_else(column == 0, min(column[column!=0]), column)
   return (column)
 }
 
@@ -329,13 +330,15 @@ weight_matrix <- 1/uncertainty_matrix
 # start_time_lsnmf_nndsvd <- Sys.time()
 # 
 components <- 4:5
- lsnmf_nndsvd_less_o3 <- nmf(
+lsnmf_nndsvd_less_o3 <- nmf(
    normalized_matrix_less_o3,
    rank = components,
    nrun = 1, # since using nndsvd
    method = "ls-nmf",
    weight = weight_matrix,
-   seed = 'nndsvd'
+   seed = 'nndsvd',
+   maxIter = 10000,
+   .stop = 1e-9,
  )
 # 
 # end_time_lsnmf_nndsvd <- Sys.time()
@@ -464,6 +467,7 @@ tibble(factor = c(1:length(variance_explained_trad_factors),
 
 #ggsave('variance-explained.png')
 ```
+
 ### LOO Variance explained (in updated paper use traditional)
 ```{r}
 # call it leave-one-out variance explained
@@ -605,6 +609,15 @@ nmfplt_5_svd_5c_less_o3 <- get_component_plot(H_long_5c_less_o3,
                                            '5', '2) Produced Water')
 ```
 
+```{r}
+get_component_plot(H_long_5c_less_o3, '1', '1')
+get_component_plot(H_long_5c_less_o3, '2', '2')
+get_component_plot(H_long_5c_less_o3, '3', '3')
+get_component_plot(H_long_5c_less_o3, '4', '4')
+get_component_plot(H_long_5c_less_o3, '5', '5')
+```
+
+
 
 ```{r}
 # Strip y- and x-axis from all except bottom
@@ -640,7 +653,7 @@ final_plot <- final_plot +
         axis.text = element_text(size = 20),
         plot.title = element_text(size = 22))
 final_plot
-ggsave("/Users/meredith/Library/CloudStorage/GoogleDrive-mereditf@usc.edu/Shared drives/HEI Energy/papers/nmf/factors_patchwork_5factor_10-18-2025.png", final_plot, width = 16, height = 20)
+# ggsave("/Users/meredith/Library/CloudStorage/GoogleDrive-mereditf@usc.edu/Shared drives/HEI Energy/papers/nmf/factors_patchwork_5factor_10-18-2025.png", final_plot, width = 16, height = 20)
 #/Users/meredith/Library/CloudStorage/GoogleDrive-mereditf@usc.edu/Shared drives/HEI Energy/papers/nmf/
 ```
 
